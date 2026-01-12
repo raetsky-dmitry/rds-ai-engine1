@@ -174,7 +174,7 @@ class RDS_AIE_Main
 			'edit_posts',
 			'rds-aie',
 			[$this, 'render_admin_page'],
-			'dashicons-robot',
+			'dashicons-nametag',
 			30
 		);
 
