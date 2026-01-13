@@ -24,6 +24,43 @@ define('RDS_AIE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RDS_AIE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RDS_AIE_PLUGIN_BASENAME', plugin_basename(__FILE__));
 
+// Константы для типовых ассистентов
+define('RDS_AIE_ASSISTANT_GENERAL', 0);
+define('RDS_AIE_ASSISTANT_CREATIVE', 1);
+define('RDS_AIE_ASSISTANT_TECHNICAL', 2);
+define('RDS_AIE_ASSISTANT_SUPPORT', 3);
+
+// Вспомогательные функции
+if (!function_exists('rds_aie_create_assistant')) {
+	function rds_aie_create_assistant($name, $system_prompt, $args = [])
+	{
+		$ai_engine = RDS_AIE_Main::get_instance();
+		return $ai_engine->create_assistant(array_merge([
+			'name' => $name,
+			'system_prompt' => $system_prompt
+		], $args));
+	}
+}
+
+if (!function_exists('rds_aie_get_assistant')) {
+	function rds_aie_get_assistant($assistant_id)
+	{
+		$ai_engine = RDS_AIE_Main::get_instance();
+		return $ai_engine->get_assistant($assistant_id);
+	}
+}
+
+if (!function_exists('rds_aie_chat')) {
+	function rds_aie_chat($message, $assistant_id = 0, $args = [])
+	{
+		$ai_engine = RDS_AIE_Main::get_instance();
+		return $ai_engine->chat_completion(array_merge([
+			'assistant_id' => $assistant_id,
+			'message' => $message
+		], $args));
+	}
+}
+
 // Простой автозагрузчик классов
 function rds_aie_autoloader($class_name)
 {

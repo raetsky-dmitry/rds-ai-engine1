@@ -41,12 +41,30 @@ class RDS_AIE_Main
 	}
 
 	/**
+	 * Регистрация предустановленных ассистентов
+	 * (для других плагинов)
+	 */
+	public function register_default_assistants()
+	{
+		// Пример предустановленных ассистентов
+		$default_assistants = apply_filters('rds_aie_default_assistants', []);
+
+		foreach ($default_assistants as $assistant_data) {
+			$this->get_or_create_assistant(
+				$assistant_data['name'],
+				$assistant_data
+			);
+		}
+	}
+
+	/**
 	 * Инициализация хуков WordPress
 	 */
 	private function init_hooks()
 	{
 		// Инициализация после загрузки всех плагинов
 		add_action('plugins_loaded', [$this, 'init_components']);
+		add_action('plugins_loaded', [$this, 'register_default_assistants'], 5);
 
 		// Инициализация админки - позже, чтобы компоненты успели загрузиться
 		if (is_admin()) {
@@ -366,6 +384,207 @@ class RDS_AIE_Main
 	public function chat_completion($params = [])
 	{
 		return $this->get_ai_client()->chat_completion($params);
+	}
+
+// includes/class-main.php - добавить в класс RDS_AIE_Main:
+
+	/**
+	 * Создание ассистента программно
+	 * 
+	 * @param array $data Данные ассистента
+	 * @return int|WP_Error ID созданного ассистента или ошибка
+	 */
+	public function create_assistant($data)
+	{
+		$defaults = [
+			'name' => '',
+			'system_prompt' => '',
+			'default_model_id' => null,
+			'max_tokens' => 1000,
+			'temperature' => 0.7,
+			'history_enabled' => true,
+			'history_messages_count' => 10,
+			'knowledge_base_enabled' => false
+		];
+
+		$data = wp_parse_args($data, $defaults);
+
+		// Валидация
+		if (empty($data['name'])) {
+			return new WP_Error('invalid_name', __('Assistant name is required.', 'rds-ai-engine'));
+		}
+
+		if (empty($data['system_prompt'])) {
+			return new WP_Error('invalid_prompt', __('System prompt is required.', 'rds-ai-engine'));
+		}
+
+		// Если не указана модель, используем модель по умолчанию
+		if (empty($data['default_model_id'])) {
+			$default_model = $this->get_model_manager()->get_default_model();
+			if ($default_model) {
+				$data['default_model_id'] = $default_model->id;
+			}
+		}
+
+		try {
+			$assistant_manager = $this->get_assistant_manager();
+			$assistant_id = $assistant_manager->save($data);
+
+			if (!$assistant_id) {
+				return new WP_Error('save_failed', __('Failed to save assistant.', 'rds-ai-engine'));
+			}
+
+			// Действие после создания ассистента
+			do_action('rds_aie_assistant_created', $assistant_id, $data);
+
+			return $assistant_id;
+		} catch (Exception $e) {
+			return new WP_Error('exception', $e->getMessage());
+		}
+	}
+
+	/**
+	 * Получение ассистента по ID
+	 * 
+	 * @param int $assistant_id ID ассистента
+	 * @return object|WP_Error Объект ассистента или ошибка
+	 */
+	public function get_assistant($assistant_id)
+	{
+		try {
+			$assistant = $this->get_assistant_manager()->get($assistant_id);
+
+			if (!$assistant) {
+				return new WP_Error('not_found', __('Assistant not found.', 'rds-ai-engine'));
+			}
+
+			return $assistant;
+		} catch (Exception $e) {
+			return new WP_Error('exception', $e->getMessage());
+		}
+	}
+
+	/**
+	 * Обновление ассистента
+	 * 
+	 * @param int $assistant_id ID ассистента
+	 * @param array $data Данные для обновления
+	 * @return bool|WP_Error Успех или ошибка
+	 */
+	public function update_assistant($assistant_id, $data)
+	{
+		try {
+			$assistant_manager = $this->get_assistant_manager();
+
+			// Проверяем существование ассистента
+			$existing = $assistant_manager->get($assistant_id);
+			if (!$existing) {
+				return new WP_Error('not_found', __('Assistant not found.', 'rds-ai-engine'));
+			}
+
+			$data['id'] = $assistant_id;
+			$result = $assistant_manager->save($data);
+
+			if (!$result) {
+				return new WP_Error('update_failed', __('Failed to update assistant.', 'rds-ai-engine'));
+			}
+
+			// Действие после обновления ассистента
+			do_action('rds_aie_assistant_updated', $assistant_id, $data);
+
+			return true;
+		} catch (Exception $e) {
+			return new WP_Error('exception', $e->getMessage());
+		}
+	}
+
+	/**
+	 * Удаление ассистента
+	 * 
+	 * @param int $assistant_id ID ассистента
+	 * @return bool|WP_Error Успех или ошибка
+	 */
+	public function delete_assistant($assistant_id)
+	{
+		try {
+			$assistant_manager = $this->get_assistant_manager();
+			$result = $assistant_manager->delete($assistant_id);
+
+			if (!$result) {
+				return new WP_Error('delete_failed', __('Failed to delete assistant.', 'rds-ai-engine'));
+			}
+
+			// Действие после удаления ассистента
+			do_action('rds_aie_assistant_deleted', $assistant_id);
+
+			return true;
+		} catch (Exception $e) {
+			return new WP_Error('exception', $e->getMessage());
+		}
+	}
+
+	/**
+	 * Поиск ассистентов по имени
+	 * 
+	 * @param string $search Строка поиска
+	 * @return array|WP_Error Массив ассистентов или ошибка
+	 */
+	public function search_assistants($search)
+	{
+		try {
+			$all_assistants = $this->get_assistant_manager()->get_all();
+			$results = [];
+
+			foreach ($all_assistants as $assistant) {
+				if (stripos($assistant->name, $search) !== false) {
+					$results[] = $assistant;
+				}
+			}
+
+			return $results;
+		} catch (Exception $e) {
+			return new WP_Error('exception', $e->getMessage());
+		}
+	}
+
+	/**
+	 * Получение всех ассистентов
+	 * 
+	 * @return array|WP_Error Массив ассистентов или ошибка
+	 */
+	public function get_all_assistants()
+	{
+		try {
+			return $this->get_assistant_manager()->get_all();
+		} catch (Exception $e) {
+			return new WP_Error('exception', $e->getMessage());
+		}
+	}
+
+	/**
+	 * Создание или получение существующего ассистента по имени
+	 * (удобно для плагинов, которым нужен гарантированно уникальный ассистент)
+	 * 
+	 * @param string $name Уникальное имя ассистента
+	 * @param array $data Данные ассистента (используются только при создании)
+	 * @return int|WP_Error ID ассистента или ошибка
+	 */
+	public function get_or_create_assistant($name, $data = [])
+	{
+		// Ищем существующего ассистента с таким именем
+		$assistants = $this->search_assistants($name);
+
+		if (!is_wp_error($assistants) && !empty($assistants)) {
+			foreach ($assistants as $assistant) {
+				if ($assistant->name === $name) {
+					return $assistant->id;
+				}
+			}
+		}
+
+		// Если не найден, создаем нового
+		$data['name'] = $name;
+		return $this->create_assistant($data);
 	}
 
 	/**

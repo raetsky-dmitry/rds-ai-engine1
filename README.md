@@ -139,6 +139,30 @@ if ($result['success']) {
 $history = $assistant->get_conversation_history(5);
 ```
 
+#### Пример создания кастомных ассистентов
+
+```php
+// Простой пример создания и использования ассистента
+$ai_engine = RDS_AIE_Main::get_instance();
+
+// 1. Создаем ассистента (или получаем существующего)
+$assistant_id = $ai_engine->get_or_create_assistant('My Plugin Assistant', [
+    'system_prompt' => 'Ты помогаешь пользователям работать с плагином My Plugin...',
+    'temperature' => 0.7,
+    'max_tokens' => 1000
+]);
+
+// 2. Используем ассистента
+$response = $ai_engine->chat_completion([
+    'assistant_id' => $assistant_id,
+    'message' => 'Как настроить плагин?',
+    'session_id' => 'user_' . get_current_user_id()
+]);
+
+// Или через хелпер-функцию
+$response = rds_aie_chat('Как настроить плагин?', $assistant_id);
+```
+
 #### Пример с кастомными ассистентами
 
 ```php
