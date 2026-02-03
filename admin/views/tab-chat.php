@@ -8,7 +8,11 @@ $main = RDS_AIE_Main::get_instance();
 $model_manager = $main->get_model_manager();
 $assistant_manager = $main->get_assistant_manager();
 
-$models = $model_manager->get_all();
+// Получаем только текстовые модели
+$text_models = $model_manager->get_models_by_type('text');
+$both_models = $model_manager->get_models_by_type('both');
+$models = array_merge($text_models, $both_models);
+
 $assistants = $assistant_manager->get_all();
 ?>
 
@@ -74,8 +78,8 @@ $assistants = $assistant_manager->get_all();
 				<div class="debug-tab-content" id="debugHistory">
 					<pre><code id="debugHistoryContent"><?php _e('No history data yet...', 'rds-ai-engine'); ?></code></pre>
 				</div>
-				<div class="debug-tab-content" id="debugFullrequest">
-					<pre><code id="debugFullrequestContent"><?php _e('No full request data yet...', 'rds-ai-engine'); ?></code></pre>
+				<div class="debug-tab-content" id="debugFullRequest">
+					<pre><code id="debugFullRequestContent"><?php _e('No full request data yet...', 'rds-ai-engine'); ?></code></pre>
 				</div>
 				<div class="debug-tab-content" id="debugResponse">
 					<pre><code id="debugResponseContent"><?php _e('No response data yet...', 'rds-ai-engine'); ?></code></pre>
@@ -84,13 +88,14 @@ $assistants = $assistant_manager->get_all();
 		</div>
 
 		<div class="chat-input">
-			<textarea id="chatInput" placeholder="<?php esc_attr_e('Type your message here...', 'rds-ai-engine'); ?>"
-				rows="3"></textarea>
-			<div class="chat-actions">
-				<button id="sendMessage" class="button button-primary" disabled>
+			<div class="input-container">
+				<textarea id="chatMessage" placeholder="<?php _e('Type your message here...', 'rds-ai-engine'); ?>"></textarea>
+				<button id="sendChatMessage" class="button button-primary">
 					<?php _e('Send', 'rds-ai-engine'); ?>
 				</button>
-				<button id="clearChat" class="button">
+			</div>
+			<div class="actions-container">
+				<button id="clearChat" class="button button-secondary">
 					<?php _e('Clear Chat', 'rds-ai-engine'); ?>
 				</button>
 				<button id="toggleDebug" class="button button-secondary">

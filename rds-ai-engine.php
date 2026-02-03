@@ -99,7 +99,12 @@ function rds_aie_check_classes()
 		'RDS_AIE_DB',
 		'RDS_AIE_Model_Manager',
 		'RDS_AIE_Assistant_Manager',
-		'RDS_AIE_AI_Client'
+		'RDS_AIE_AI_Client',
+		'RDS_AIE_History_Manager',
+		'RDS_AIE_Generator_Base',
+		'RDS_AIE_Text_Generator',
+		'RDS_AIE_Image_Generator',
+		'RDS_AIE_Generator_Factory'
 	];
 
 	foreach ($required_classes as $class) {
@@ -131,6 +136,14 @@ function rds_aie_init()
 
 	// Инициализация главного класса
 	$GLOBALS['rds_aie'] = RDS_AIE_Main::get_instance();
+	
+	// Добавляем хук для автоматической очистки
+	if (!wp_next_scheduled('rds_aie_cleanup_generations')) {
+		wp_schedule_event(time(), 'hourly', 'rds_aie_cleanup_generations');
+	}
+	
+	// Хук для выполнения очистки
+	add_action('rds_aie_cleanup_generations', 'rds_aie_perform_cleanup_generations');
 }
 add_action('plugins_loaded', 'rds_aie_init');
 
@@ -155,6 +168,15 @@ function rds_aie_activate_plugin()
 			'history_enabled' => true,
 			'history_messages_count' => 10
 		]);
+
+		// Настройки изображений по умолчанию
+		add_option('rds_aie_image_defaults', [
+			'size' => '1024x1024',
+			'quality' => 'standard',
+			'style' => 'vivid',
+			'n' => 1,
+			'response_format' => 'b64_json'
+		]);
 	}
 }
 
@@ -162,6 +184,7 @@ function rds_aie_deactivate_plugin()
 {
 	// Очистка кеша, остановка крона и т.д.
 	wp_clear_scheduled_hook('rds_aie_cleanup_history');
+	wp_clear_scheduled_hook('rds_aie_cleanup_generations');
 }
 
 // Хук для удаления плагина
@@ -181,4 +204,215 @@ function rds_aie_uninstall_plugin()
 	// Удаление опций
 	delete_option('rds_aie_version');
 	delete_option('rds_aie_default_settings');
+}
+
+
+// Хук для обновления плагина
+add_action('plugins_loaded', 'rds_aie_check_update');
+
+function rds_aie_check_update()
+{
+	$current_version = get_option('rds_aie_version', '0');
+
+	if (version_compare($current_version, RDS_AIE_VERSION, '<')) {
+		// Обновляем таблицы
+		rds_aie_autoloader('RDS_AIE_DB');
+
+		if (class_exists('RDS_AIE_DB')) {
+			$db = new RDS_AIE_DB();
+			$db->update_tables();
+		}
+
+		// Обновляем версию
+		update_option('rds_aie_version', RDS_AIE_VERSION);
+	}
+}
+
+/**
+ * Генерация изображения
+ * 
+ * @param string $prompt Текст промпта
+ * @param array $params Параметры генерации
+ * @return array|WP_Error Массив base64 изображений или ошибка
+ */
+if (!function_exists('rds_aie_generate_image')) {
+	function rds_aie_generate_image($prompt, $params = [])
+	{
+		$ai_engine = RDS_AIE_Main::get_instance();
+
+		$defaults = [
+			'model_id' => 0,
+			'session_id' => '',
+			'plugin_id' => 'default'
+		];
+
+		$params = wp_parse_args($params, $defaults);
+		$params['prompt'] = $prompt;
+
+		try {
+			return $ai_engine->image_generation($params);
+		} catch (Exception $e) {
+			return new WP_Error('image_generation_error', $e->getMessage());
+		}
+	}
+}
+
+/**
+ * Универсальная генерация
+ * 
+ * @param mixed $input Входные данные (промпт для изображения или сообщение для чата)
+ * @param array $params Параметры генерации
+ * @return mixed Результат генерации
+ */
+if (!function_exists('rds_aie_generate')) {
+	function rds_aie_generate($input, $params = [])
+	{
+		$ai_engine = RDS_AIE_Main::get_instance();
+
+		$defaults = [
+			'type' => 'text',
+			'model_id' => 0,
+			'session_id' => '',
+			'plugin_id' => 'default'
+		];
+
+		$params = wp_parse_args($params, $defaults);
+
+		// Определяем тип по параметрам
+		if (isset($params['prompt'])) {
+			$params['type'] = 'image';
+		} elseif (isset($params['message'])) {
+			$params['type'] = 'text';
+			$params['message'] = $input;
+		} else {
+			// Если тип не указан явно, пытаемся определить
+			if ($params['type'] === 'image') {
+				$params['prompt'] = $input;
+			} else {
+				$params['message'] = $input;
+			}
+		}
+
+		try {
+			return $ai_engine->generate($params);
+		} catch (Exception $e) {
+			return new WP_Error('generation_error', $e->getMessage());
+		}
+	}
+}
+
+/**
+ * Получение моделей определённого типа
+ * 
+ * @param string $type Тип модели (text, image, both)
+ * @return array Массив моделей
+ */
+if (!function_exists('rds_aie_get_models_by_type')) {
+	function rds_aie_get_models_by_type($type = 'text')
+	{
+		$ai_engine = RDS_AIE_Main::get_instance();
+		$model_manager = $ai_engine->get_model_manager();
+
+		try {
+			return $model_manager->get_models_by_type($type);
+		} catch (Exception $e) {
+			return [];
+		}
+	}
+}
+
+/**
+ * Получение модели по умолчанию для указанного типа
+ * 
+ * @param string $type Тип модели (text, image, both)
+ * @return object|null Объект модели или null
+ */
+if (!function_exists('rds_aie_get_default_model_by_type')) {
+	function rds_aie_get_default_model_by_type($type = 'text')
+	{
+		$ai_engine = RDS_AIE_Main::get_instance();
+		$model_manager = $ai_engine->get_model_manager();
+
+		try {
+			return $model_manager->get_default_model_by_type($type);
+		} catch (Exception $e) {
+			return null;
+		}
+	}
+}
+
+/**
+ * Выполнение очистки старых записей генерации изображений
+ */
+function rds_aie_perform_cleanup_generations() {
+    error_log('RDS AI Engine: Automatic cleanup triggered');
+    
+    // Проверяем, включена ли автоматическая очистка
+    $settings = get_option('rds_aie_history_settings', []);
+    
+    error_log('RDS AI Engine: Settings retrieved: ' . print_r($settings, true));
+    
+    if (isset($settings['cleanup_enabled']) && $settings['cleanup_enabled']) {
+        $hours = isset($settings['image_generation_retention_hours']) ? 
+            intval($settings['image_generation_retention_hours']) : 1;
+        
+        error_log("RDS AI Engine: Cleaning up images older than $hours hours");
+            
+        if (class_exists('RDS_AIE_Main')) {
+            $ai_engine = RDS_AIE_Main::get_instance();
+            $history_manager = $ai_engine->get_history_manager();
+            
+            if ($history_manager) {
+                $result = $history_manager->cleanup_old_generations($hours);
+                error_log("RDS AI Engine: Cleaned up $result image generation records");
+            } else {
+                error_log("RDS AI Engine: Could not get history manager instance");
+            }
+        } else {
+            error_log("RDS AI Engine: Main class does not exist");
+        }
+    } else {
+        error_log("RDS AI Engine: Automatic cleanup is disabled");
+    }
+}
+
+// Вспомогательная функция для тестирования URL
+if (!function_exists('rds_aie_test_api_url')) {
+	function rds_aie_test_api_url($url, $api_key = '')
+	{
+		$test_url = trailingslashit($url) . 'images/generations';
+
+		$args = [
+			'timeout' => 30,
+			'headers' => [
+				'Content-Type' => 'application/json',
+				'Authorization' => 'Bearer ' . $api_key
+			],
+			'body' => wp_json_encode([
+				'model' => 'dall-e-2',
+				'prompt' => 'test',
+				'n' => 1,
+				'size' => '256x256'
+			])
+		];
+
+		$response = wp_remote_post($test_url, $args);
+
+		if (is_wp_error($response)) {
+			return [
+				'success' => false,
+				'message' => $response->get_error_message(),
+				'code' => 0
+			];
+		}
+
+		$code = wp_remote_retrieve_response_code($response);
+		$body = wp_remote_retrieve_body($response);
+
+		return [
+			'success' => $code >= 200 && $code < 300,
+			'message' => $body,
+			'code' => $code
+		];
+	}
 }

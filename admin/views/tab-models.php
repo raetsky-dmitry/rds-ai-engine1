@@ -36,7 +36,8 @@ if (isset($_POST['action'])) {
 						'model_name' => sanitize_text_field($_POST['model_name']),
 						'api_key' => sanitize_text_field($_POST['api_key']),
 						'max_tokens' => intval($_POST['max_tokens']),
-						'is_default' => isset($_POST['is_default']) ? 1 : 0
+						'is_default' => isset($_POST['is_default']) ? 1 : 0,
+						'model_type' => sanitize_text_field($_POST['model_type'])
 					];
 
 					$model_manager->save($model_data);
@@ -117,6 +118,25 @@ if (isset($_GET['delete'])) {
 				</tr>
 				<tr>
 					<th scope="row">
+						<label for="model_type"><?php _e('Model Type', 'rds-ai-engine'); ?> *</label>
+					</th>
+					<td>
+						<select id="model_type" name="model_type" class="regular-text" required>
+							<option value="text" <?php selected($edit_model ? $edit_model->model_type : 'text', 'text'); ?>>
+								<?php _e('Text Generation', 'rds-ai-engine'); ?>
+							</option>
+							<option value="image" <?php selected($edit_model ? $edit_model->model_type : 'text', 'image'); ?>>
+								<?php _e('Image Generation', 'rds-ai-engine'); ?>
+							</option>
+							<option value="both" <?php selected($edit_model ? $edit_model->model_type : 'text', 'both'); ?>>
+								<?php _e('Text and Image Generation', 'rds-ai-engine'); ?>
+							</option>
+						</select>
+						<p class="description"><?php _e('Type of AI model (text, image, or both).', 'rds-ai-engine'); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row">
 						<label for="base_url"><?php _e('Base URL', 'rds-ai-engine'); ?> *</label>
 					</th>
 					<td>
@@ -132,7 +152,7 @@ if (isset($_GET['delete'])) {
 					<td>
 						<input type="text" id="model_name" name="model_name" class="regular-text"
 							value="<?php echo $edit_model ? esc_attr($edit_model->model_name) : 'gpt-3.5-turbo'; ?>" required>
-						<p class="description"><?php _e('The specific model name (e.g., gpt-3.5-turbo, gpt-4).', 'rds-ai-engine'); ?></p>
+						<p class="description"><?php _e('The specific model name (e.g., gpt-3.5-turbo, dall-e-3).', 'rds-ai-engine'); ?></p>
 					</td>
 				</tr>
 				<tr>
@@ -191,8 +211,9 @@ if (isset($_GET['delete'])) {
 				<thead>
 					<tr>
 						<th><?php _e('Name', 'rds-ai-engine'); ?></th>
-						<th><?php _e('Base URL', 'rds-ai-engine'); ?></th>
+						<th><?php _e('Type', 'rds-ai-engine'); ?></th>
 						<th><?php _e('Model', 'rds-ai-engine'); ?></th>
+						<th><?php _e('Base URL', 'rds-ai-engine'); ?></th>
 						<th><?php _e('Max Tokens', 'rds-ai-engine'); ?></th>
 						<th><?php _e('Default', 'rds-ai-engine'); ?></th>
 						<th><?php _e('Actions', 'rds-ai-engine'); ?></th>
@@ -202,8 +223,20 @@ if (isset($_GET['delete'])) {
 					<?php foreach ($models as $model): ?>
 						<tr>
 							<td><?php echo esc_html($model->name); ?></td>
-							<td><?php echo esc_html($model->base_url); ?></td>
+							<td>
+								<span class="model-type-badge model-type-<?php echo esc_attr($model->model_type); ?>">
+									<?php
+									$type_labels = [
+										'text' => __('Text', 'rds-ai-engine'),
+										'image' => __('Image', 'rds-ai-engine'),
+										'both' => __('Both', 'rds-ai-engine')
+									];
+									echo esc_html($type_labels[$model->model_type] ?? $model->model_type);
+									?>
+								</span>
+							</td>
 							<td><?php echo esc_html($model->model_name); ?></td>
+							<td><?php echo esc_html($model->base_url); ?></td>
 							<td><?php echo esc_html($model->max_tokens); ?></td>
 							<td>
 								<?php if ($model->is_default): ?>
@@ -220,6 +253,7 @@ if (isset($_GET['delete'])) {
 									<?php _e('Delete', 'rds-ai-engine'); ?>
 								</a>
 							</td>
+
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
@@ -227,3 +261,32 @@ if (isset($_GET['delete'])) {
 		<?php endif; ?>
 	</div>
 </div>
+
+<style>
+	.model-type-badge {
+		display: inline-block;
+		padding: 3px 8px;
+		border-radius: 3px;
+		font-size: 12px;
+		font-weight: 600;
+		text-transform: uppercase;
+	}
+
+	.model-type-text {
+		background: #e3f2fd;
+		color: #1565c0;
+		border: 1px solid #bbdefb;
+	}
+
+	.model-type-image {
+		background: #f3e5f5;
+		color: #7b1fa2;
+		border: 1px solid #e1bee7;
+	}
+
+	.model-type-both {
+		background: #e8f5e9;
+		color: #2e7d32;
+		border: 1px solid #c8e6c9;
+	}
+</style>

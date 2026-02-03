@@ -17,19 +17,19 @@
       "chat_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
 
     // Активация кнопки отправки при вводе текста
-    $("#chatInput").on("input", function () {
+    $("#chatMessage").on("input", function () {
       const hasText = $(this).val().trim().length > 0;
-      $("#sendMessage").prop("disabled", !hasText);
+      $("#sendChatMessage").prop("disabled", !hasText);
     });
 
     // Отправка сообщения по клику
-    $("#sendMessage").on("click", sendMessage);
+    $("#sendChatMessage").on("click", sendMessage);
 
     // Отправка сообщения по Enter (без Shift)
-    $("#chatInput").on("keydown", function (e) {
+    $("#chatMessage").on("keydown", function (e) {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        if (!$("#sendMessage").prop("disabled")) {
+        if (!$("#sendChatMessage").prop("disabled")) {
           sendMessage();
         }
       }
@@ -48,14 +48,14 @@
     });
 
     // Автофокус на поле ввода
-    $("#chatInput").focus();
+    $("#chatMessage").focus();
   });
 
   /**
    * Отправка сообщения
    */
   function sendMessage() {
-    const message = $("#chatInput").val().trim();
+    const message = $("#chatMessage").val().trim();
     const modelId = $("#chat_model").val();
     const assistantId = $("#chat_assistant").val();
 
@@ -67,7 +67,7 @@
     if (!modelId && !assistantId) {
       alert(
         rds_aie_ajax.select_model_or_assistant ||
-          "Please select a model or assistant."
+          "Please select a model or assistant.",
       );
       return;
     }
@@ -76,8 +76,8 @@
     addMessage("user", message);
 
     // Очистка поля ввода
-    $("#chatInput").val("");
-    $("#sendMessage").prop("disabled", true);
+    $("#chatMessage").val("");
+    $("#sendChatMessage").prop("disabled", true);
 
     // Показ индикатора загрузки
     showLoading();
@@ -177,32 +177,32 @@
     // Обновляем вкладку запроса
     if (debugData.lastRequest) {
       $("#debugRequestContent").text(
-        JSON.stringify(debugData.lastRequest, null, 2)
+        JSON.stringify(debugData.lastRequest, null, 2),
       );
     }
 
     // Обновляем вкладку истории
     if (debugData.lastHistory) {
       $("#debugHistoryContent").text(
-        JSON.stringify(debugData.lastHistory, null, 2)
+        JSON.stringify(debugData.lastHistory, null, 2),
       );
     } else {
       $("#debugHistoryContent").text(
-        rds_aie_ajax.no_history || "No conversation history retrieved."
+        rds_aie_ajax.no_history || "No conversation history retrieved.",
       );
     }
 
     // Обновляем вкладку полного запроса
-    if (debugData.lastRequest) {
-      $("#debugFullrequestContent").text(
-        JSON.stringify(debugData.fullRequest, null, 2)
+    if (debugData.fullRequest) {
+      $("#debugFullRequestContent").text(
+        JSON.stringify(debugData.fullRequest, null, 2),
       );
     }
 
     // Обновляем вкладку ответа
     if (debugData.lastResponse) {
       $("#debugResponseContent").text(
-        JSON.stringify(debugData.lastResponse, null, 2)
+        JSON.stringify(debugData.lastResponse, null, 2),
       );
     }
   }
@@ -215,9 +215,28 @@
     $(".debug-tab").removeClass("active");
     $(".debug-tab-content").removeClass("active");
 
+    // Специальная обработка для различных вкладок
+    let targetId = '';
+    switch(tab) {
+      case 'request':
+        targetId = 'debugRequest';
+        break;
+      case 'history':
+        targetId = 'debugHistory';
+        break;
+      case 'fullrequest':
+        targetId = 'debugFullRequest';
+        break;
+      case 'response':
+        targetId = 'debugResponse';
+        break;
+      default:
+        targetId = `debug${tab.charAt(0).toUpperCase() + tab.slice(1)}`;
+    }
+
     // Добавляем активный класс выбранной вкладке и контенту
     $(`.debug-tab[data-tab="${tab}"]`).addClass("active");
-    $(`#debug${tab.charAt(0).toUpperCase() + tab.slice(1)}`).addClass("active");
+    $(`#${targetId}`).addClass("active");
   }
 
   /**
@@ -297,7 +316,7 @@
   function showLoading() {
     const messagesContainer = $("#chatMessages");
     messagesContainer.append(
-      '<div class="loading">' + rds_aie_ajax.loading_text + "</div>"
+      '<div class="loading">' + rds_aie_ajax.loading_text + "</div>",
     );
     scrollToBottom();
   }
@@ -315,7 +334,8 @@
   function clearChat() {
     if (
       confirm(
-        rds_aie_ajax.confirm_clear || "Are you sure you want to clear the chat?"
+        rds_aie_ajax.confirm_clear ||
+          "Are you sure you want to clear the chat?",
       )
     ) {
       // Генерируем новый session_id
@@ -326,20 +346,20 @@
         '<div class="chat-welcome"><p>' +
           (rds_aie_ajax.chat_welcome ||
             "Start a conversation by typing a message below.") +
-          "</p></div>"
+          "</p></div>",
       );
       chatHistory = [];
       debugData = { lastRequest: null, lastResponse: null, lastHistory: null };
 
       // Очищаем отладку
       $("#debugRequestContent").text(
-        rds_aie_ajax.no_request || "No request data yet..."
+        rds_aie_ajax.no_request || "No request data yet...",
       );
       $("#debugHistoryContent").text(
-        rds_aie_ajax.no_history || "No history data yet..."
+        rds_aie_ajax.no_history || "No history data yet...",
       );
       $("#debugResponseContent").text(
-        rds_aie_ajax.no_response || "No response data yet..."
+        rds_aie_ajax.no_response || "No response data yet...",
       );
 
       scrollToBottom();

@@ -109,6 +109,14 @@ class RDS_AIE_History_Manager
 	}
 
 	/**
+	 * Очистка старых записей генерации изображений
+	 */
+	public function cleanup_old_generations($hours = 1)
+	{
+		return $this->db->cleanup_old_generations($hours);
+	}
+
+	/**
 	 * Генерация session_id
 	 */
 	private function generate_session_id()

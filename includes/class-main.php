@@ -20,6 +20,7 @@ class RDS_AIE_Main
 	private $history_manager = null;
 	private $db = null;
 	private $ai_client = null;
+	private $generator_factory = null; // Добавляем это
 
 	/**
 	 * Конструктор (закрытый для Singleton)
@@ -38,6 +39,17 @@ class RDS_AIE_Main
 			self::$instance = new self();
 		}
 		return self::$instance;
+	}
+
+	/**
+	 * Получить фабрику генераторов
+	 */
+	public function get_generator_factory()
+	{
+		if (null === $this->generator_factory) {
+			$this->init_components();
+		}
+		return $this->generator_factory;
 	}
 
 	/**
@@ -66,16 +78,72 @@ class RDS_AIE_Main
 		add_action('plugins_loaded', [$this, 'init_components']);
 		add_action('plugins_loaded', [$this, 'register_default_assistants'], 5);
 
-		// Инициализация админки - позже, чтобы компоненты успели загрузиться
+		// Инициализация админки
 		if (is_admin()) {
 			add_action('admin_menu', [$this, 'add_admin_menu'], 20);
 			add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts'], 20);
 			add_action('wp_ajax_rds_aie_test_chat', [$this, 'ajax_test_chat']);
+			add_action('wp_ajax_rds_aie_test_image_generation', [$this, 'ajax_test_image_generation']); // Новый обработчик
 		}
 
 		// Крон для очистки старой истории
 		add_action('rds_aie_daily_cleanup', [$this, 'daily_cleanup']);
 		add_action('init', [$this, 'schedule_cleanup']);
+	}
+
+	/**
+	 * AJAX обработчик тестовой генерации изображений
+	 */
+	public function ajax_test_image_generation()
+	{
+		// Проверка nonce
+		check_ajax_referer('rds_aie_image_test_nonce', 'nonce');
+
+		// Проверка прав
+		if (!current_user_can('edit_posts')) {
+			wp_die('Unauthorized', 401);
+		}
+
+		// Получение данных
+		$prompt = isset($_POST['prompt']) ? sanitize_textarea_field($_POST['prompt']) : '';
+		$model_id = isset($_POST['model_id']) ? intval($_POST['model_id']) : 0;
+		$size = isset($_POST['size']) ? sanitize_text_field($_POST['size']) : '1024x1024';
+		$n = isset($_POST['n']) ? intval($_POST['n']) : 1;
+		$quality = isset($_POST['quality']) ? sanitize_text_field($_POST['quality']) : 'standard';
+		$style = isset($_POST['style']) ? sanitize_text_field($_POST['style']) : 'vivid';
+
+		if (empty($prompt)) {
+			wp_send_json_error(['message' => __('Prompt is empty.', 'rds-ai-engine')]);
+		}
+
+		if ($model_id <= 0) {
+			wp_send_json_error(['message' => __('Please select a model.', 'rds-ai-engine')]);
+		}
+
+		try {
+			// Генерация изображения
+			$result = $this->image_generation([
+				'model_id' => $model_id,
+				'prompt' => $prompt,
+				'override_params' => [
+					'size' => $size,
+					'n' => $n,
+					'quality' => $quality,
+					'style' => $style,
+					'response_format' => 'b64_json'
+				]
+			]);
+
+			wp_send_json_success([
+				'message' => __('Image generated successfully.', 'rds-ai-engine'),
+				'images' => $result,
+				'count' => count($result)
+			]);
+		} catch (Exception $e) {
+			wp_send_json_error([
+				'message' => $e->getMessage()
+			]);
+		}
 	}
 
 	/**
@@ -124,6 +192,17 @@ class RDS_AIE_Main
 
 		$this->history_manager = new RDS_AIE_History_Manager($this->db);
 
+		// Загружаем генераторы и фабрику
+		if (!class_exists('RDS_AIE_Generator_Base')) {
+			require_once RDS_AIE_PLUGIN_DIR . 'includes/class-generator-base.php';
+			require_once RDS_AIE_PLUGIN_DIR . 'includes/class-text-generator.php';
+			require_once RDS_AIE_PLUGIN_DIR . 'includes/class-image-generator.php';
+			require_once RDS_AIE_PLUGIN_DIR . 'includes/class-generator-factory.php';
+		}
+
+		// Создаём фабрику
+		$this->generator_factory = new RDS_AIE_Generator_Factory($this->db, $this->model_manager);
+
 		// Загружаем AI Client если еще не загружен
 		if (!class_exists('RDS_AIE_AI_Client')) {
 			require_once RDS_AIE_PLUGIN_DIR . 'includes/class-ai-client.php';
@@ -132,7 +211,8 @@ class RDS_AIE_Main
 		$this->ai_client = new RDS_AIE_AI_Client(
 			$this->model_manager,
 			$this->assistant_manager,
-			$this->history_manager
+			$this->history_manager,
+			$this->generator_factory  // Передаём фабрику
 		);
 	}
 
@@ -239,8 +319,11 @@ class RDS_AIE_Main
 			RDS_AIE_VERSION
 		);
 
+		// Получаем текущую вкладку
+		$current_tab = isset($_GET['tab']) ? $_GET['tab'] : 'models';
+
 		// JS для тестового чата
-		if (isset($_GET['tab']) && $_GET['tab'] === 'chat') {
+		if ($current_tab === 'chat') {
 			wp_enqueue_script(
 				'rds-aie-chat',
 				RDS_AIE_PLUGIN_URL . 'admin/js/chat.js',
@@ -263,6 +346,34 @@ class RDS_AIE_Main
 				'no_request' => __('No request data yet...', 'rds-ai-engine'),
 				'no_history' => __('No history data yet...', 'rds-ai-engine'),
 				'no_response' => __('No response data yet...', 'rds-ai-engine')
+			]);
+		}
+
+		// JS для тестовой генерации изображений
+		if ($current_tab === 'image-test') {
+			wp_enqueue_script(
+				'rds-aie-image-test',
+				RDS_AIE_PLUGIN_URL . 'admin/js/image-test.js',
+				['jquery'],
+				RDS_AIE_VERSION,
+				true
+			);
+
+			// Локализация для JS
+			wp_localize_script('rds-aie-image-test', 'rds_aie_image_test', [
+				'ajax_url' => admin_url('admin-ajax.php'),
+				'nonce' => wp_create_nonce('rds_aie_image_test_nonce'),
+				'loading' => __('Generating images...', 'rds-ai-engine'),
+				'generating' => __('Generating...', 'rds-ai-engine'),
+				'error' => __('Error', 'rds-ai-engine'),
+				'ajax_error' => __('AJAX request failed.', 'rds-ai-engine'),
+				'select_model' => __('Please select a model.', 'rds-ai-engine'),
+				'enter_prompt' => __('Please enter a prompt.', 'rds-ai-engine'),
+				'no_images' => __('No images generated.', 'rds-ai-engine'),
+				'generated_images' => __('Generated Images', 'rds-ai-engine'),
+				'image_alt' => __('Generated image', 'rds-ai-engine'),
+				'copy_base64' => __('Copy Base64', 'rds-ai-engine'),
+				'copied' => __('Copied!', 'rds-ai-engine')
 			]);
 		}
 	}
@@ -639,5 +750,34 @@ class RDS_AIE_Main
 		delete_option('rds_aie_version');
 		delete_option('rds_aie_default_settings');
 		delete_option('rds_aie_history_settings');
+	}
+
+	/**
+	 * Генерация изображения
+	 */
+	public function image_generation($params = [])
+	{
+		return $this->get_ai_client()->image_generation($params);
+	}
+
+	/**
+	 * Универсальный метод генерации
+	 */
+	public function generate($params = [])
+	{
+		return $this->get_ai_client()->generate($params);
+	}
+
+	/**
+	 * Тестирование генерации изображений
+	 */
+	public function test_image_generation($model_id, $test_prompt = null)
+	{
+		// Если промпт не указан, используем стандартный
+		if (empty($test_prompt)) {
+			$test_prompt = 'A happy cartoon cat playing with a ball of yarn';
+		}
+
+		return $this->get_ai_client()->test_image_generation($model_id, $test_prompt);
 	}
 }

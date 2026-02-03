@@ -10,6 +10,7 @@ $history_manager = $main->get_history_manager();
 // Настройки по умолчанию
 $default_settings = get_option('rds_aie_default_settings', [
 	'history_retention_days' => 7,
+	'image_generation_retention_hours' => 1, // по умолчанию 1 час для хранения генерации изображений
 	'cleanup_enabled' => true
 ]);
 
@@ -18,6 +19,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'save_history_settings') {
 	if (wp_verify_nonce($_POST['_wpnonce'], 'rds_aie_history_settings')) {
 		$settings = [
 			'history_retention_days' => intval($_POST['history_retention_days']),
+			'image_generation_retention_hours' => intval($_POST['image_generation_retention_hours']),
 			'cleanup_enabled' => isset($_POST['cleanup_enabled']) ? 1 : 0
 		];
 
@@ -34,15 +36,27 @@ if (isset($_POST['action']) && $_POST['action'] === 'cleanup_history') {
 	if (wp_verify_nonce($_POST['_wpnonce'], 'rds_aie_cleanup_history')) {
 		$days = intval($_POST['cleanup_days']);
 		$deleted = $history_manager->cleanup_old_history($days);
+		
+		$hours = isset($_POST['cleanup_hours']) ? intval($_POST['cleanup_hours']) : 1;
+		error_log("RDS AI Engine: Manual cleanup triggered for images older than $hours hours");
+		$deleted_images = $history_manager->cleanup_old_generations($hours);
+		error_log("RDS AI Engine: Manual cleanup removed $deleted_images image records");
 
 		echo '<div class="notice notice-success"><p>' .
 			sprintf(__('Deleted %d old conversation records.', 'rds-ai-engine'), $deleted) .
+			'</p></div>';
+			
+		echo '<div class="notice notice-success"><p>' .
+			sprintf(__('Deleted %d old image generation records.', 'rds-ai-engine'), $deleted_images) .
 			'</p></div>';
 	}
 }
 
 // Получаем текущие настройки
 $current_settings = get_option('rds_aie_history_settings', $default_settings);
+
+// Убедимся, что все необходимые ключи присутствуют
+$current_settings = wp_parse_args($current_settings, $default_settings);
 ?>
 
 <div class="rds-aie-history">
@@ -63,6 +77,17 @@ $current_settings = get_option('rds_aie_history_settings', $default_settings);
 							min="1" max="365" step="1"
 							value="<?php echo esc_attr($current_settings['history_retention_days']); ?>">
 						<p class="description"><?php _e('Number of days to keep conversation history. Older records will be automatically deleted.', 'rds-ai-engine'); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row">
+						<label for="image_generation_retention_hours"><?php _e('Image Generation Retention Period', 'rds-ai-engine'); ?></label>
+					</th>
+					<td>
+						<input type="number" id="image_generation_retention_hours" name="image_generation_retention_hours"
+							min="1" max="168" step="1" 
+							value="<?php echo esc_attr(isset($current_settings['image_generation_retention_hours']) ? $current_settings['image_generation_retention_hours'] : 1); ?>">
+						<p class="description"><?php _e('Number of hours to keep image generation history. Older records will be automatically deleted.', 'rds-ai-engine'); ?></p>
 					</td>
 				</tr>
 				<tr>
@@ -98,11 +123,20 @@ $current_settings = get_option('rds_aie_history_settings', $default_settings);
 			<table class="form-table">
 				<tr>
 					<th scope="row">
-						<label for="cleanup_days"><?php _e('Delete History Older Than', 'rds-ai-engine'); ?></label>
+						<label for="cleanup_days"><?php _e('Delete Chat History Older Than', 'rds-ai-engine'); ?></label>
 					</th>
 					<td>
 						<input type="number" id="cleanup_days" name="cleanup_days"
 							min="1" max="365" step="1" value="7"> <?php _e('days', 'rds-ai-engine'); ?>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row">
+						<label for="cleanup_hours"><?php _e('Delete Image Generation History Older Than', 'rds-ai-engine'); ?></label>
+					</th>
+					<td>
+						<input type="number" id="cleanup_hours" name="cleanup_hours"
+							min="1" max="168" step="1" value="1"> <?php _e('hours', 'rds-ai-engine'); ?>
 					</td>
 				</tr>
 			</table>
@@ -120,11 +154,15 @@ $current_settings = get_option('rds_aie_history_settings', $default_settings);
 		<h3><?php _e('History Statistics', 'rds-ai-engine'); ?></h3>
 		<?php
 		global $wpdb;
-		$table_name = $wpdb->prefix . 'rds_aie_conversations';
+		$conversations_table_name = $wpdb->prefix . 'rds_aie_conversations';
+		$generations_table_name = $wpdb->prefix . 'rds_aie_generations';
 
-		$total_messages = $wpdb->get_var("SELECT COUNT(*) FROM {$table_name}");
-		$total_sessions = $wpdb->get_var("SELECT COUNT(DISTINCT session_id) FROM {$table_name}");
-		$oldest_record = $wpdb->get_var("SELECT MIN(created_at) FROM {$table_name}");
+		$total_messages = $wpdb->get_var("SELECT COUNT(*) FROM {$conversations_table_name}");
+		$total_sessions = $wpdb->get_var("SELECT COUNT(DISTINCT session_id) FROM {$conversations_table_name}");
+		$oldest_record = $wpdb->get_var("SELECT MIN(created_at) FROM {$conversations_table_name}");
+		
+		$total_generated_images = $wpdb->get_var("SELECT COUNT(*) FROM {$generations_table_name}");
+		$oldest_generation = $wpdb->get_var("SELECT MIN(created_at) FROM {$generations_table_name}");
 		?>
 
 		<table class="wp-list-table widefat fixed striped">
@@ -144,8 +182,16 @@ $current_settings = get_option('rds_aie_history_settings', $default_settings);
 					<td><?php echo esc_html($total_sessions ?: 0); ?></td>
 				</tr>
 				<tr>
-					<td><?php _e('Oldest Record', 'rds-ai-engine'); ?></td>
+					<td><?php _e('Total Generated Images', 'rds-ai-engine'); ?></td>
+					<td><?php echo esc_html($total_generated_images ?: 0); ?></td>
+				</tr>
+				<tr>
+					<td><?php _e('Oldest Chat Record', 'rds-ai-engine'); ?></td>
 					<td><?php echo $oldest_record ? esc_html($oldest_record) : __('No records', 'rds-ai-engine'); ?></td>
+				</tr>
+				<tr>
+					<td><?php _e('Oldest Image Generation Record', 'rds-ai-engine'); ?></td>
+					<td><?php echo $oldest_generation ? esc_html($oldest_generation) : __('No records', 'rds-ai-engine'); ?></td>
 				</tr>
 			</tbody>
 		</table>

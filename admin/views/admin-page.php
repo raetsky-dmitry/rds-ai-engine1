@@ -12,7 +12,8 @@ $tabs = [
 	'models' => __('Models', 'rds-ai-engine'),
 	'assistants' => __('Assistants', 'rds-ai-engine'),
 	'history' => __('History', 'rds-ai-engine'),
-	'chat' => __('Test Chat', 'rds-ai-engine')
+	'chat' => __('Test Chat', 'rds-ai-engine'),
+	'image-test' => __('Image Generation', 'rds-ai-engine')
 ];
 ?>
 <div class="wrap rds-aie-admin">

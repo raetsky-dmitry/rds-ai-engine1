@@ -9,13 +9,159 @@ class RDS_AIE_AI_Client
 
 	private $model_manager;
 	private $assistant_manager;
-	private $history_manager;  // НОВЫЙ
+	private $history_manager;
+	private $generator_factory;
 
-	public function __construct($model_manager, $assistant_manager, $history_manager)
+	public function __construct($model_manager, $assistant_manager, $history_manager, $generator_factory = null)
 	{
 		$this->model_manager = $model_manager;
 		$this->assistant_manager = $assistant_manager;
-		$this->history_manager = $history_manager;  // НОВЫЙ
+		$this->history_manager = $history_manager;
+
+		// Если фабрика не передана, создаём её
+		if ($generator_factory) {
+			$this->generator_factory = $generator_factory;
+		} else {
+			// Ленивая загрузка фабрики
+			if (!class_exists('RDS_AIE_Generator_Factory')) {
+				require_once RDS_AIE_PLUGIN_DIR . 'includes/class-generator-factory.php';
+			}
+			if (!class_exists('RDS_AIE_DB')) {
+				require_once RDS_AIE_PLUGIN_DIR . 'includes/class-db.php';
+			}
+
+			$db = new RDS_AIE_DB();
+			$this->generator_factory = new RDS_AIE_Generator_Factory($db, $model_manager);
+		}
+	}
+
+	/**
+	 * Генерация изображения
+	 */
+	public function image_generation($params)
+	{
+		$defaults = [
+			'model_id' => 0,
+			'prompt' => '',
+			'session_id' => '',
+			'plugin_id' => 'default',
+			'override_params' => []
+		];
+
+		$params = wp_parse_args($params, $defaults);
+
+		if (empty($params['prompt'])) {
+			throw new Exception(__('Prompt is required for image generation', 'rds-ai-engine'));
+		}
+
+		try {
+			// Создаем генератор изображений
+			$generator = $this->generator_factory->create_image_generator(
+				$params['model_id'],
+				array_merge(
+					['prompt' => $params['prompt']],
+					$params['override_params']
+				)
+			);
+
+			// Валидируем параметры
+			$generator_params = $generator->get_params();
+			$generator->validate_params($generator_params);
+
+			// Сохраняем запрос в БД
+			$generation_id = $generator->save_result([
+				'session_id' => $params['session_id'] ?: $this->generate_session_id(),
+				'plugin_id' => $params['plugin_id'],
+				'prompt' => $params['prompt'],
+				'parameters' => $generator_params,
+				'status' => 'pending'
+			]);
+
+			// Подготавливаем запрос - для OpenRouter используем chat/completions
+			$request_data = $generator->prepare_request([]);
+
+			// Получаем модель
+			$model = $generator->get_model();
+
+			if (!$model) {
+				throw new Exception(__('Model not found', 'rds-ai-engine'));
+			}
+
+			// Определяем endpoint в зависимости от провайдера
+			$endpoint = $this->get_image_endpoint($model->base_url);
+
+			// Отправляем запрос
+			$response = $this->make_api_request($model->base_url, $model->api_key, $request_data, $endpoint);
+
+			// Обрабатываем ответ
+			$result = $generator->process_response($response);
+
+			// Сохраняем результат
+			$generator->log_success($generation_id, $result);
+
+			return $result;
+		} catch (Exception $e) {
+			// Логируем ошибку
+			if (isset($generation_id) && isset($generator)) {
+				$generator->log_error($generation_id, $e->getMessage());
+			}
+
+			throw $e;
+		}
+	}
+
+	/**
+	 * Определение endpoint для генерации изображений
+	 */
+	private function get_image_endpoint($base_url)
+	{
+		// Если это OpenRouter, используем chat/completions
+		if (strpos($base_url, 'openrouter.ai') !== false) {
+			return 'chat/completions';
+		}
+
+		// Для OpenAI и других совместимых API
+		return 'images/generations';
+	}
+
+	/**
+	 * Генерация session_id
+	 */
+	private function generate_session_id()
+	{
+		return 'img_' . time() . '_' . wp_rand(1000, 9999);
+	}
+
+	/**
+	 * Универсальный метод генерации
+	 */
+	public function generate($params)
+	{
+		$defaults = [
+			'type' => 'text',
+			'model_id' => 0,
+			'session_id' => '',
+			'plugin_id' => 'default'
+		];
+
+		$params = wp_parse_args($params, $defaults);
+
+		switch ($params['type']) {
+			case 'image':
+				return $this->image_generation($params);
+			case 'text':
+			default:
+				return $this->chat_completion($params);
+		}
+	}
+
+	/**
+	 * Получение ID модели по умолчанию для изображений
+	 */
+	private function get_default_image_model_id()
+	{
+		$model = $this->model_manager->get_default_model_by_type('image');
+		return $model ? $model->id : 0;
 	}
 
 	/**
@@ -316,21 +462,24 @@ class RDS_AIE_AI_Client
 	/**
 	 * Отправка запроса к API
 	 */
-	private function make_api_request($base_url, $api_key, $data)
+	private function make_api_request($base_url, $api_key, $data, $endpoint = 'chat/completions')
 	{
-		$url = trailingslashit($base_url) . 'chat/completions';
+		$url = trailingslashit($base_url) . $endpoint;
 
-		// Для отладки - логируем запрос
+		// Для отладки
 		if (defined('WP_DEBUG') && WP_DEBUG) {
 			error_log('RDS AI Engine Request to: ' . $url);
-			error_log('RDS AI Engine Request data: ' . json_encode($data));
+			error_log('RDS AI Engine Request data (без ключа): ' . json_encode($this->sanitize_request_data($data)));
+			error_log('RDS AI Engine API Key (first 10 chars): ' . substr($api_key, 0, 10) . '...');
 		}
 
 		$args = [
-			'timeout' => 60,
+			'timeout' => 120,
 			'headers' => [
 				'Content-Type' => 'application/json',
-				'Authorization' => 'Bearer ' . $api_key
+				'Authorization' => 'Bearer ' . $api_key,
+				'HTTP-Referer' => get_site_url(), // Для OpenRouter
+				'X-Title' => get_bloginfo('name') // Для OpenRouter
 			],
 			'body' => wp_json_encode($data)
 		];
@@ -338,38 +487,281 @@ class RDS_AIE_AI_Client
 		$response = wp_remote_post($url, $args);
 
 		if (is_wp_error($response)) {
-			throw new Exception($response->get_error_message());
+			throw new Exception(sprintf(
+				__('API request error: %s', 'rds-ai-engine'),
+				$response->get_error_message()
+			));
 		}
 
 		$body = wp_remote_retrieve_body($response);
 		$response_code = wp_remote_retrieve_response_code($response);
+		$response_headers = wp_remote_retrieve_headers($response);
 
-		// Для отладки - логируем ответ
+		// Для отладки
 		if (defined('WP_DEBUG') && WP_DEBUG) {
-			error_log('RDS AI Engine Response code: ' . $response_code);
-			error_log('RDS AI Engine Response body: ' . $body);
+			// Логируем структуру ответа для image generation
+			if ($endpoint === 'chat/completions' && isset($decoded['choices'][0]['message'])) {
+				$message = $decoded['choices'][0]['message'];
+				$structure = [
+					'has_images' => isset($message['images']),
+					'has_content' => isset($message['content']),
+					'content_type' => isset($message['content']) ? gettype($message['content']) : 'none',
+					'message_keys' => array_keys($message)
+				];
+				error_log('RDS AI Engine Response Structure: ' . json_encode($structure));
+
+				if (isset($message['images'])) {
+					error_log('RDS AI Engine Images count: ' . count($message['images']));
+					if (!empty($message['images'])) {
+						$first_image = $message['images'][0];
+						error_log('RDS AI Engine First image keys: ' . json_encode(array_keys($first_image)));
+						if (isset($first_image['image_url']['url'])) {
+							$url = $first_image['image_url']['url'];
+							error_log('RDS AI Engine Image URL type: ' . (strpos($url, 'data:') === 0 ? 'data URI' : 'regular URL'));
+						}
+					}
+				}
+			}
+		}
+
+		// Проверяем, является ли ответ HTML
+		if (
+			strpos($body, '<!DOCTYPE') === 0 ||
+			strpos($body, '<html') === 0 ||
+			strpos(strtolower($body), '<!doctype') === 0 ||
+			strpos(strtolower($body), '<html') === 0
+		) {
+
+			// Извлекаем заголовок из HTML для лучшего сообщения об ошибке
+			$title = '';
+			if (preg_match('/<title>(.*?)<\/title>/i', $body, $matches)) {
+				$title = trim($matches[1]);
+			}
+
+			throw new Exception(sprintf(
+				__('Server returned HTML instead of JSON. Check the API URL and credentials. %sURL: %s%sStatus: %d%sTitle: %s', 'rds-ai-engine'),
+				PHP_EOL,
+				$url,
+				PHP_EOL,
+				$response_code,
+				PHP_EOL,
+				$title
+			));
 		}
 
 		$decoded = json_decode($body, true);
 
 		if (json_last_error() !== JSON_ERROR_NONE) {
-			// Если это не JSON, возможно, это ошибка сервера
-			if (strpos($body, '<html') !== false || strpos($body, '<!DOCTYPE') !== false) {
-				throw new Exception(__('Server returned HTML instead of JSON. Check the API URL.', 'rds-ai-engine'));
+			// Если это не JSON и не HTML, возможно это текстовая ошибка
+			if (!empty($body) && strlen($body) < 1000) {
+				// Возможно это текстовая ошибка от API
+				throw new Exception(sprintf(
+					__('API returned non-JSON response: %s', 'rds-ai-engine'),
+					substr($body, 0, 200)
+				));
 			}
-			throw new Exception(__('Invalid JSON response from API. Response: ', 'rds-ai-engine') . substr($body, 0, 200));
+
+			throw new Exception(__('Invalid JSON response from API. Check the API endpoint.', 'rds-ai-engine'));
 		}
 
+		// Детальная обработка ошибок OpenRouter
 		if ($response_code < 200 || $response_code >= 300) {
-			$error_msg = isset($decoded['error']['message'])
-				? $decoded['error']['message']
-				: (isset($decoded['message'])
-					? $decoded['message']
-					: sprintf(__('API request failed with status code %d', 'rds-ai-engine'), $response_code));
+			$error_msg = $this->extract_error_message($decoded, $response_code);
+			throw new Exception($error_msg);
+		}
+
+		// Проверяем на наличие ошибок в успешном ответе
+		if (isset($decoded['error'])) {
+			$error_msg = $this->extract_error_message($decoded, $response_code);
 			throw new Exception($error_msg);
 		}
 
 		return $decoded;
+	}
+
+	/**
+	 * Извлечение детального сообщения об ошибке
+	 */
+	private function extract_error_message($response, $status_code)
+	{
+		$default_message = sprintf(__('API request failed with status code %d', 'rds-ai-engine'), $status_code);
+
+		if (isset($response['error']['message'])) {
+			$message = $response['error']['message'];
+
+			// Добавляем дополнительную информацию если есть
+			if (isset($response['error']['code'])) {
+				$message .= ' (Code: ' . $response['error']['code'] . ')';
+			}
+
+			if (isset($response['error']['type'])) {
+				$message .= ' [Type: ' . $response['error']['type'] . ']';
+			}
+
+			return $message;
+		}
+
+		if (isset($response['message'])) {
+			return $response['message'];
+		}
+
+		// Для OpenRouter специфичных ошибок
+		if (isset($response['detail'])) {
+			if (is_array($response['detail'])) {
+				return json_encode($response['detail'], JSON_UNESCAPED_UNICODE);
+			}
+			return $response['detail'];
+		}
+
+		return $default_message;
+	}
+
+	/**
+	 * Санитизация данных запроса для логирования (убираем API ключ)
+	 */
+	private function sanitize_request_data($data)
+	{
+		$sanitized = $data;
+
+		// Убираем API ключ если он где-то вложен
+		if (isset($sanitized['headers']['Authorization'])) {
+			$sanitized['headers']['Authorization'] = 'Bearer REDACTED';
+		}
+
+		// Убираем любые похожие на ключи данные
+		array_walk_recursive($sanitized, function (&$value, $key) {
+			if (is_string($value) && strlen($value) > 20 && preg_match('/^[a-zA-Z0-9_\-]{40,}$/', $value)) {
+				$value = substr($value, 0, 10) . '...REDACTED';
+			}
+		});
+
+		return $sanitized;
+	}
+
+	/**
+	 * Проверка соединения с Image API
+	 */
+	public function test_image_api_connection($base_url, $api_key, $model_name)
+	{
+		try {
+			// Определяем формат запроса в зависимости от провайдера
+			$is_openrouter = strpos($base_url, 'openrouter.ai') !== false;
+			$endpoint = $is_openrouter ? 'chat/completions' : 'images/generations';
+
+			if ($is_openrouter) {
+				$test_data = [
+					'model' => $model_name,
+					'messages' => [
+						[
+							'role' => 'user',
+							'content' => 'test'
+						]
+					],
+					'modalities' => ['image']
+				];
+			} else {
+				$test_data = [
+					'model' => $model_name,
+					'prompt' => 'test',
+					'n' => 1,
+					'size' => '256x256'
+				];
+			}
+
+			$response = $this->make_api_request($base_url, $api_key, $test_data, $endpoint);
+
+			return [
+				'success' => true,
+				'message' => __('Image API connection successful.', 'rds-ai-engine'),
+				'response' => $response
+			];
+		} catch (Exception $e) {
+			return [
+				'success' => false,
+				'message' => $e->getMessage()
+			];
+		}
+	}
+
+	/**
+	 * Определение типа провайдера по URL
+	 */
+	private function get_provider_type($base_url)
+	{
+		if (strpos($base_url, 'openrouter.ai') !== false) {
+			return 'openrouter';
+		} elseif (strpos($base_url, 'openai.com') !== false) {
+			return 'openai';
+		} elseif (strpos($base_url, 'anthropic.com') !== false) {
+			return 'anthropic';
+		} else {
+			return 'generic';
+		}
+	}
+
+	/**
+	 * Тестирование генерации изображений
+	 */
+	public function test_image_generation($model_id, $test_prompt = 'A cute cat')
+	{
+		try {
+			// Создаем генератор с тестовыми параметрами
+			$generator = $this->generator_factory->create_image_generator($model_id, [
+				'prompt' => $test_prompt,
+				'n' => 1,
+				'size' => '256x256',
+				'response_format' => 'b64_json'
+			]);
+
+			// Валидируем параметры
+			$generator->validate_params($generator->get_params());
+
+			// Сохраняем запрос в БД
+			$generation_id = $generator->save_result([
+				'session_id' => 'test_' . time(),
+				'plugin_id' => 'test',
+				'prompt' => $test_prompt,
+				'status' => 'pending'
+			]);
+
+			// Подготавливаем запрос
+			$request_data = $generator->prepare_request([]);
+
+			// Получаем модель
+			$model = $generator->get_model();
+
+			if (!$model) {
+				throw new Exception(__('Model not found', 'rds-ai-engine'));
+			}
+
+			// Определяем endpoint
+			$endpoint = $this->get_image_endpoint($model->base_url);
+
+			// Отправляем запрос
+			$response = $this->make_api_request($model->base_url, $model->api_key, $request_data, $endpoint);
+
+			// Обрабатываем ответ
+			$result = $generator->process_response($response);
+
+			// Сохраняем результат
+			$generator->log_success($generation_id, $result);
+
+			return [
+				'success' => true,
+				'message' => __('Image generation successful', 'rds-ai-engine'),
+				'result' => $result
+			];
+		} catch (Exception $e) {
+			// Логируем ошибку
+			if (isset($generation_id) && isset($generator)) {
+				$generator->log_error($generation_id, $e->getMessage());
+			}
+
+			return [
+				'success' => false,
+				'message' => $e->getMessage()
+			];
+		}
 	}
 
 	/**

@@ -18,19 +18,24 @@ class RDS_AIE_DB
 		$table_prefix = $wpdb->prefix . 'rds_aie_';
 
 		// Таблица моделей
-		$sql1 = "CREATE TABLE IF NOT EXISTS {$table_prefix}models (
-        id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
-        name VARCHAR(255) NOT NULL,
-        base_url VARCHAR(255) NOT NULL,
-        model_name VARCHAR(255) NOT NULL,
-        api_key TEXT NOT NULL,
-        max_tokens INT DEFAULT 4096,
-        is_default TINYINT(1) DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		$table_name = $wpdb->prefix . 'rds_aie_models';
+		$sql1 = "CREATE TABLE IF NOT EXISTS {$table_name} (
+        id int(11) NOT NULL AUTO_INCREMENT,
+        name varchar(255) NOT NULL,
+        base_url varchar(255) NOT NULL,
+        model_name varchar(255) NOT NULL,
+        api_key text NOT NULL,
+        max_tokens int(11) DEFAULT 4096,
+        is_default tinyint(1) DEFAULT 0,
+        model_type enum('text', 'image', 'both') DEFAULT 'text',
+        capabilities text,
+        image_params text,
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
-        KEY is_default (is_default)
-    ) $charset_collate;";
+        KEY is_default (is_default),
+        KEY model_type (model_type)
+    ) {$charset_collate};";
 
 		// Таблица ассистентов
 		$sql2 = "CREATE TABLE IF NOT EXISTS {$table_prefix}assistants (
@@ -71,10 +76,35 @@ class RDS_AIE_DB
         INDEX session_created (session_id, created_at)
     ) $charset_collate;";
 
+		$table_name = $wpdb->prefix . 'rds_aie_generations';
+		$sql_generations = "CREATE TABLE IF NOT EXISTS {$table_name} (
+    id int(11) NOT NULL AUTO_INCREMENT,
+    model_id int(11) NOT NULL,
+    session_id varchar(100),
+    plugin_id varchar(50) DEFAULT 'default',
+    user_id int(11) DEFAULT 0,
+    type enum('text', 'image') DEFAULT 'text',
+    prompt text,
+    parameters text,
+    response_data longtext,
+    response_format varchar(20) DEFAULT 'text',
+    tokens_used int(11) DEFAULT 0,
+    status enum('pending', 'success', 'error') DEFAULT 'pending',
+    error_message text,
+    created_at datetime DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY model_id (model_id),
+    KEY session_id (session_id),
+    KEY type (type),
+    KEY status (status),
+    KEY created_at (created_at)
+) {$charset_collate};";
+
 		require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
 		dbDelta($sql1);
 		dbDelta($sql2);
 		dbDelta($sql3);
+		dbDelta($sql_generations);
 	}
 
 	/**
@@ -88,7 +118,8 @@ class RDS_AIE_DB
 		$tables = [
 			'conversations',  // НОВАЯ ТАБЛИЦА
 			'assistants',
-			'models'
+			'models',
+			'generations'
 		];
 
 		foreach ($tables as $table) {
@@ -198,7 +229,7 @@ class RDS_AIE_DB
 		global $wpdb;
 		$table_name = $wpdb->prefix . 'rds_aie_conversations';
 
-		$date = date('Y-m-d H:i:s', strtotime("-{$days} days"));
+		$date = gmdate('Y-m-d H:i:s', strtotime("-{$days} days", current_time('timestamp')));
 
 		return $wpdb->query($wpdb->prepare(
 			"DELETE FROM {$table_name} WHERE created_at < %s",
@@ -354,5 +385,116 @@ class RDS_AIE_DB
 		$table_name = $wpdb->prefix . 'rds_aie_assistants';
 
 		return $wpdb->delete($table_name, ['id' => $id]);
+	}
+
+	/**
+	 * Сохранение результата генерации
+	 */
+	public function save_generation($data)
+	{
+		global $wpdb;
+
+		$defaults = [
+			'user_id' => get_current_user_id(),
+			'created_at' => current_time('mysql')
+		];
+
+		$data = wp_parse_args($data, $defaults);
+
+		// Сериализуем массивы в JSON
+		if (isset($data['parameters']) && is_array($data['parameters'])) {
+			$data['parameters'] = wp_json_encode($data['parameters'], JSON_UNESCAPED_UNICODE);
+		}
+
+		if (isset($data['response_data']) && is_array($data['response_data'])) {
+			$data['response_data'] = wp_json_encode($data['response_data'], JSON_UNESCAPED_UNICODE);
+		}
+
+		$table_name = $wpdb->prefix . 'rds_aie_generations';
+
+		if (isset($data['id']) && $data['id'] > 0) {
+			// Обновление
+			$wpdb->update($table_name, $data, ['id' => $data['id']]);
+			return $data['id'];
+		} else {
+			// Вставка
+			$wpdb->insert($table_name, $data);
+			return $wpdb->insert_id;
+		}
+	}
+
+	/**
+	 * Получение генерации по ID
+	 */
+	public function get_generation($id)
+	{
+		global $wpdb;
+		$table_name = $wpdb->prefix . 'rds_aie_generations';
+
+		$generation = $wpdb->get_row($wpdb->prepare(
+			"SELECT * FROM {$table_name} WHERE id = %d",
+			$id
+		));
+
+		if ($generation) {
+			// Десериализуем JSON поля
+			if (!empty($generation->parameters)) {
+				$generation->parameters = json_decode($generation->parameters, true);
+			}
+
+			if (!empty($generation->response_data)) {
+				$generation->response_data = json_decode($generation->response_data, true);
+			}
+		}
+
+		return $generation;
+	}
+
+	/**
+	 * Получение генераций по сессии
+	 */
+	public function get_generations_by_session($session_id, $limit = 20)
+	{
+		global $wpdb;
+		$table_name = $wpdb->prefix . 'rds_aie_generations';
+
+		$results = $wpdb->get_results($wpdb->prepare(
+			"SELECT * FROM {$table_name} WHERE session_id = %s ORDER BY created_at DESC LIMIT %d",
+			$session_id,
+			$limit
+		));
+
+		foreach ($results as &$result) {
+			if (!empty($result->parameters)) {
+				$result->parameters = json_decode($result->parameters, true);
+			}
+
+			if (!empty($result->response_data)) {
+				$result->response_data = json_decode($result->response_data, true);
+			}
+		}
+
+		return $results;
+	}
+
+	/**
+	 * Очистка старых генераций (по количеству часов)
+	 */
+	public function cleanup_old_generations($hours = 1)
+	{
+		global $wpdb;
+		$table_name = $wpdb->prefix . 'rds_aie_generations';
+
+		$date = gmdate('Y-m-d H:i:s', strtotime("-{$hours} hours", current_time('timestamp')));
+
+		// Для отладки
+		if (defined('WP_DEBUG') && WP_DEBUG) {
+			error_log('RDS AI Engine Image Delete Datet: ' . $date);
+		}
+
+		return $wpdb->query($wpdb->prepare(
+			"DELETE FROM {$table_name} WHERE created_at < %s",
+			$date
+		));
 	}
 }
