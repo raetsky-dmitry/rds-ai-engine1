@@ -12,7 +12,7 @@ if (!current_user_can('edit_posts')) {
 }
 
 // Настройки для теста
-$api_key = 'yhqT2Y8XgCxMLELfu2iQU8WXGQE/fMbiVjIVHCEn4rYpiWBTDeKnuwcn/mgvpmxI55qLiyJVpToOanXOtMmnfwLieNGRnct8hivYHdDKAvhsyIr75TNUJXWIRK58+JsnQ=='; // Замените на реальный ключ
+$api_key = '...'; // Замените на реальный ключ
 $model = 'flux'; // Или другая image модель
 $prompt = 'A cute cartoon cat';
 

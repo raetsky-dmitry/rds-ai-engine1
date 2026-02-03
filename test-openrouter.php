@@ -12,7 +12,7 @@ if (!current_user_can('edit_posts')) {
 }
 
 // Настройки для теста
-$api_key = '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'; // Замените на реальный ключ
+$api_key = '...'; // Замените на реальный ключ
 $model = 'black-forest-labs/flux.2-klein-4b'; // Или другая image модель
 $prompt = 'A magical New Year scene. In the foreground, a kindly old man (Father Frost) with a long white beard and a traditional red suit with fur trim sits comfortably in a large leather chair, holding a cup of hot tea. Next to him, in a similar chair, sits a graceful, refined female robot (Snow Maiden), made of polished silver and white ceramic, dressed in a traditional blue fur coat with silver sequins and white fur trim, with a silver tiara on her head. She holds a cup of tea with her elegant robotic hands. They look at each other, as if engaged in friendly conversation. In the background is a cozy crackling fireplace, a beautifully decorated Christmas tree with twinkling lights and wrapped presents, garlands, and a window with a snowy landscape outside. The style is detailed, touching digital painting, cinematic lighting, and a photorealistic, cozy atmosphere. No text.';
 
