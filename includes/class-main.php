@@ -107,10 +107,12 @@ class RDS_AIE_Main
 		// Получение данных
 		$prompt = isset($_POST['prompt']) ? sanitize_textarea_field($_POST['prompt']) : '';
 		$model_id = isset($_POST['model_id']) ? intval($_POST['model_id']) : 0;
-		$size = isset($_POST['size']) ? sanitize_text_field($_POST['size']) : '1024x1024';
+		$width = isset($_POST['width']) ? sanitize_text_field($_POST['width']) : '1024';
+		$height = isset($_POST['height']) ? sanitize_text_field($_POST['height']) : '1024';
 		$n = isset($_POST['n']) ? intval($_POST['n']) : 1;
 		$quality = isset($_POST['quality']) ? sanitize_text_field($_POST['quality']) : 'standard';
 		$style = isset($_POST['style']) ? sanitize_text_field($_POST['style']) : 'vivid';
+		$seed = isset($_POST['seed']) ? intval($_POST['seed']) : null;
 
 		if (empty($prompt)) {
 			wp_send_json_error(['message' => __('Prompt is empty.', 'rds-ai-engine')]);
@@ -126,10 +128,12 @@ class RDS_AIE_Main
 				'model_id' => $model_id,
 				'prompt' => $prompt,
 				'override_params' => [
-					'size' => $size,
+					'width' => $width,
+					'height' => $height,
 					'n' => $n,
 					'quality' => $quality,
 					'style' => $style,
+					'seed' => $seed,
 					'response_format' => 'b64_json'
 				]
 			]);

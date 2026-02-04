@@ -12,9 +12,9 @@ if (!current_user_can('edit_posts')) {
 }
 
 // Настройки для теста
-$api_key = '...'; // Замените на реальный ключ
+$api_key = 'HHAVTH6Y...=='; // Замените на реальный ключ
 $model = 'flux'; // Или другая image модель
-$prompt = 'A cute cartoon cat';
+$prompt = 'terminator';
 
 // Формируем запрос как в документации
 $request_data = [

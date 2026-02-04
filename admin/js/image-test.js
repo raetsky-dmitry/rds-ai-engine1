@@ -2,8 +2,13 @@
   "use strict";
 
   $(document).ready(function () {
-    // Обработка формы генерации изображений
-    $("#testImageForm").on("submit", function (e) {
+    // Обработчик для всех форм с POST методом, которые содержат поле model_id
+    $('form[method="post"]').on("submit", function (e) {
+      // Проверяем, что это форма тестирования изображений
+      if ($(this).find('#model_id').length === 0) {
+        return; // не форма для генерации изображений
+      }
+      
       e.preventDefault();
 
       var form = $(this);
@@ -16,10 +21,12 @@
         nonce: rds_aie_image_test.nonce,
         model_id: $("#model_id").val(),
         prompt: $("#prompt").val(),
-        size: $("#size").val(),
+        width: $("#width").val(),
+        height: $("#height").val(),
         n: $("#n").val(),
         quality: $("#quality").val(),
         style: $("#style").val(),
+        seed: $("#seed").val()
       };
 
       // Валидация
@@ -77,6 +84,9 @@
       });
     });
 
+    // Удаляем дублирующийся обработчик формы из второго блока jQuery ready
+    // Все функции объединены в один блок
+    
     // Копирование base64 в буфер обмена
     $(document).on("click", ".copy-base64", function () {
       var base64 = $(this).data("base64");
@@ -147,63 +157,9 @@
     }
   });
 })(jQuery);
+// Остальной код уже включен в первый блок
 
 jQuery(document).ready(function($) {
-    const modelSelect = $('#model_id');
-    const openrouterFields = $('.openrouter-fields');
-    const nonOpenrouterFields = $('.non-openrouter-fields');
-    const conditionalSubmit = $('.conditional-fields');
-    const aspectRatioField = $('[name="aspect_ratio"]').closest('tr');
-    const sizeField = $('[name="size"]').closest('tr');
-
-    // Функция для обновления видимости полей
-    function updateFieldVisibility() {
-        const selectedOption = modelSelect.find('option:selected');
-        if (selectedOption.val() === '') {
-            openrouterFields.hide();
-            nonOpenrouterFields.hide();
-            conditionalSubmit.hide();
-            return;
-        }
-
-        // Получаем название модели из текста опции (в скобках)
-        const modelText = selectedOption.text();
-        const modelNameMatch = modelText.match(/\(([^)]+)\)/);
-        let modelName = '';
-        if (modelNameMatch) {
-            modelName = modelNameMatch[1].toLowerCase();
-        }
-
-        // Определяем, является ли модель OpenRouter
-        const isOpenRouter = modelName.includes('openai/') || 
-                             modelName.includes('google/') || 
-                             modelName.includes('stability-ai/') || 
-                             modelName.includes('black-forest-labs/') ||
-                             modelName.includes('flux') ||
-                             modelName.includes('dall') ||
-                             modelName.includes('midjourney');
-
-        if (isOpenRouter) {
-            openrouterFields.show();
-            nonOpenrouterFields.hide();
-            aspectRatioField.show();
-            sizeField.hide();
-        } else {
-            openrouterFields.hide();
-            nonOpenrouterFields.show();
-            aspectRatioField.hide();
-            sizeField.show();
-        }
-        
-        conditionalSubmit.show();
-    }
-
-    // Инициализация при загрузке
-    updateFieldVisibility();
-
-    // Обновляем при изменении выбора модели
-    modelSelect.change(updateFieldVisibility);
-
     // Обработчик формы
     $('form[method="post"]').on('submit', function(e) {
         const modelId = $('#model_id').val();
@@ -246,7 +202,7 @@ jQuery(document).ready(function($) {
                 $(this).text(originalText);
             }, 2000);
         } catch (err) {
-            console.error('Ошибка при копировании: ', err);
+            console.error('Ошибка при копирования: ', err);
             $tempInput.remove();
         }
     });

@@ -12,7 +12,7 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 		'style' => 'vivid',
 		'n' => 1,
 		'response_format' => 'b64_json',
-		'seed' => null  // Добавляем параметр seed
+		'seed' => null
 	];
 
 	public function __construct($model, $params, $db)
@@ -45,36 +45,50 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 			throw new Exception(__('Seed must be an integer between 0 and 99999', 'rds-ai-engine'));
 		}
 
-		// Проверяем, это OpenRouter или стандартный API
-		$is_openrouter = false;
-		if (isset($this->model->base_url) && strpos($this->model->base_url, 'openrouter.ai') !== false) {
-			$is_openrouter = true;
-		}
+		// // // Проверяем, это OpenRouter или стандартный API
+		// // $is_openrouter = false;
+		// // if (isset($this->model->base_url) && strpos($this->model->base_url, 'openrouter.ai') !== false) {
+		// // 	$is_openrouter = true;
+		// // }
 
-		if (!$is_openrouter) {
-			// Только для не-OpenRouter проверяем стандартные параметры
-			// Проверяем формат размера изображения: должен быть в формате NNNxNNN (например, 1024x1024)
-			if (isset($params['size']) && !preg_match('/^\d+x\d+$/', $params['size'])) {
-				throw new Exception(__('Invalid image size format. Expected format: NNNxNNN (e.g., 1024x1024)', 'rds-ai-engine'));
-			}
+		// // // Устанавливаем значения по умолчанию для ширины и высоты, если они не заданы
+		// // $width = isset($params['width']) ? intval($params['width']) : 1024;
+		// // $height = isset($params['height']) ? intval($params['height']) : 1024;
 
-			// Проверка количества изображений (только для не-OpenRouter)
-			if (isset($params['n']) && ($params['n'] < 1 || $params['n'] > 10)) {
-				throw new Exception(__('Number of images must be between 1 and 10', 'rds-ai-engine'));
-			}
+		// // if ($is_openrouter) {
+		// // 	// Для OpenRouter конвертируем width и height в aspect_ratio
+		// // 	$params['aspect_ratio'] = $this->convert_dimensions_to_aspect_ratio($width, $height);
+		// // 	$params['width'] = 200;
+		// // } else {
+		// // 	// Для стандартного API используем формат WxH
+		// // 	$params['size'] = $width . 'x' . $height;
+		// // 	$params['width'] = 100;
+		// // }
 
-			// Проверка формата ответа
-			$allowed_formats = ['url', 'b64_json'];
-			if (isset($params['response_format']) && !in_array($params['response_format'], $allowed_formats)) {
-				throw new Exception(__('Invalid response format', 'rds-ai-engine'));
-			}
-		} else {
-			// Для OpenRouter проверяем только aspect_ratio
-			$allowed_aspect_ratios = ['1:1', '4:3', '3:4', '16:9', '9:16'];
-			if (isset($params['aspect_ratio']) && !in_array($params['aspect_ratio'], $allowed_aspect_ratios)) {
-				throw new Exception(sprintf(__('Invalid aspect ratio. Allowed: %s', 'rds-ai-engine'), implode(', ', $allowed_aspect_ratios)));
-			}
-		}
+		// if (!$is_openrouter) {
+		// 	// Только для не-OpenRouter проверяем стандартные параметры
+		// 	// Проверяем формат размера изображения: должен быть в формате NNNxNNN (например, 1024x1024)
+		// 	if (isset($params['size']) && !preg_match('/^\d+x\d+$/', $params['size'])) {
+		// 		throw new Exception(__('Invalid image size format. Expected format: NNNxNNN (e.g., 1024x1024)', 'rds-ai-engine'));
+		// 	}
+
+		// 	// Проверка количества изображений (только для не-OpenRouter)
+		// 	if (isset($params['n']) && ($params['n'] < 1 || $params['n'] > 10)) {
+		// 		throw new Exception(__('Number of images must be between 1 and 10', 'rds-ai-engine'));
+		// 	}
+
+		// 	// Проверка формата ответа
+		// 	$allowed_formats = ['url', 'b64_json'];
+		// 	if (isset($params['response_format']) && !in_array($params['response_format'], $allowed_formats)) {
+		// 		throw new Exception(__('Invalid response format', 'rds-ai-engine'));
+		// 	}
+		// } else {
+		// 	// Для OpenRouter проверяем только aspect_ratio
+		// 	$allowed_aspect_ratios = ['1:1', '4:3', '3:4', '16:9', '9:16'];
+		// 	if (isset($params['aspect_ratio']) && !in_array($params['aspect_ratio'], $allowed_aspect_ratios)) {
+		// 		throw new Exception(sprintf(__('Invalid aspect ratio. Allowed: %s', 'rds-ai-engine'), implode(', ', $allowed_aspect_ratios)));
+		// 	}
+		// }
 
 		return true;
 	}
@@ -88,7 +102,7 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 
 		// Для отладки
 		if (defined('WP_DEBUG') && WP_DEBUG) {
-			error_log('RDS AI Engine Image Generation Params: ' . json_encode($params));
+			error_log('RDS AI Engine Image Generation Params: ' . json_encode($params) . " || " . json_encode($this->params));
 		}
 
 		// Проверяем, это OpenRouter или стандартный API
@@ -116,7 +130,8 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 				$request['response_format'] = $params['response_format'];
 			}
 
-			// Добавляем aspect_ratio если указан (только для OpenRouter)
+			// Добавляем aspect_ratio (только для OpenRouter)
+			$params['aspect_ratio'] = $this->convert_dimensions_to_aspect_ratio($params['width'], $params['height']);
 			if (!empty($params['aspect_ratio'])) {
 				$request['image_config'] = [
 					'aspect_ratio' => $params['aspect_ratio']
@@ -124,6 +139,7 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 			}
 		} else {
 			// Стандартный формат для OpenAI
+			$params['size'] = $params['width'] . 'x' . $params['height'];
 			$request = [
 				'model' => $this->model->model_name,
 				'prompt' => $params['prompt'],
@@ -147,9 +163,9 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 			}
 
 			// Добавляем seed если он установлен
-			if (isset($params['seed'])) {
-				$request['seed'] = (int)$params['seed'];
-			}
+			// if (isset($params['seed'])) {
+			// 	$request['seed'] = (int)$params['seed'];
+			// }
 		}
 
 		// Для отладки
@@ -158,6 +174,64 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 		}
 
 		return $request;
+	}
+
+	/**
+	 * Конвертирует ширину и высоту в соотношение сторон для OpenRouter
+	 */
+	private function convert_dimensions_to_aspect_ratio($width, $height)
+	{
+		// Сокращаем дробь до простейшего вида
+		$gcd = $this->gcd($width, $height);
+		$simplified_width = $width / $gcd;
+		$simplified_height = $height / $gcd;
+
+		// Определяем наиболее близкое соотношение сторон из допустимых
+		$ratio_str = round($simplified_width, 2) . ':' . round($simplified_height, 2);
+
+		// Список поддерживаемых соотношений сторон для OpenRouter
+		$allowed_ratios = ['1:1', '4:3', '3:4', '16:9', '9:16'];
+
+		// Проверяем точное совпадение
+		if (in_array($ratio_str, $allowed_ratios)) {
+			return $ratio_str;
+		}
+
+		// Если нет точного совпадения, выбираем наиболее близкое
+		$ratios_map = [
+			'1:1' => 1.0,     // 1.000
+			'4:3' => 1.333,   // 1.333
+			'3:4' => 0.75,    // 0.750
+			'16:9' => 1.778,  // 1.778
+			'9:16' => 0.5625  // 0.5625
+		];
+
+		$target_ratio = $width / $height;
+		$closest_ratio = '1:1'; // значение по умолчанию
+		$min_diff = abs($target_ratio - $ratios_map[$closest_ratio]);
+
+		foreach ($ratios_map as $ratio => $value) {
+			$diff = abs($target_ratio - $value);
+			if ($diff < $min_diff) {
+				$min_diff = $diff;
+				$closest_ratio = $ratio;
+			}
+		}
+
+		return $closest_ratio;
+	}
+
+	/**
+	 * Вычисляет наибольший общий делитель двух чисел
+	 */
+	private function gcd($a, $b)
+	{
+		while ($b != 0) {
+			$temp = $b;
+			$b = $a % $b;
+			$a = $temp;
+		}
+		return $a;
 	}
 
 	/**
