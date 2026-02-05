@@ -1,4 +1,6 @@
-/__docs
+_DOCS/
+_DOCS/dump_21-01-2026.md
+
 test-not-openrouter.php
 test-openrouter.php
 
