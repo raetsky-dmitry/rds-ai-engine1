@@ -18,7 +18,7 @@
           "url": "https://api.llm7.io/v1/chat/completions",
           "headers": {
             "Content-Type": "application/json",
-            "Authorization": "Bearer Gtj2f6EjD7..."
+            "Authorization": "Bearer YOUR_API_KEY"
           },
           "body": {
             "model": "gpt-4",

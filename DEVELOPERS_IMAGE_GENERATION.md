@@ -6,15 +6,6 @@ RDS AI Engine теперь поддерживает генерацию изоб�
 
 ## Основные функции для генерации изображений
 
-### Доступные модели:
-
-- **OpenAI DALL-E** (через OpenRouter)
-- **Google Gemini Image** (через OpenRouter)
-- **Stable Diffusion** (через OpenRouter)
-- **Flux** и другие image-модели
-
----
-
 ## 1. Базовая генерация изображений
 
 ### Через основной API:
@@ -39,10 +30,17 @@ $images = rds_aie_generate_image(
     'A cute cartoon cat wearing a hat',
     [
         'model_id' => 1,
-        'session_id' => 'user_123',
+        'override_params' => [
+            'width' => '1024',
+            'height' => '1024',
+            'n' => 1,
+            'quality' => 'standard',
+            'seed' => 42,
+            'response_format' => 'b64_json'
+        ],
+        'session_id' => 'user_' . get_current_user_id(),
         'plugin_id' => 'my_plugin'
-    ]
-);
+    ]);
 ```
 
 ---
@@ -56,12 +54,18 @@ $images = rds_aie_generate_image(
 $result = rds_aie_generate(
     'A futuristic city skyline at night',
     [
-        'type' => 'image',
         'model_id' => 1,
-        'size' => '1024x1024',
-        'aspect_ratio' => '16:9'
-    ]
-);
+        'override_params' => [
+            'width' => '1024',
+            'height' => '1024',
+            'n' => 1,
+            'quality' => 'standard',
+            'seed' => 42,
+            'response_format' => 'b64_json'
+        ],
+    'session_id' => 'user_' . get_current_user_id(),
+    'plugin_id' => 'my_plugin'
+    ]);
 
 // Генерация текста (обратная совместимость)
 $text_result = rds_aie_generate(
@@ -83,8 +87,8 @@ $text_result = rds_aie_generate(
 $params = [
     'model_id'       => 1,      // ID модели (обязательно для image)
     'prompt'         => '',     // Описание изображения (обязательно)
-    'size'           => '1024x1024', // Размер: 256x256, 512x512, 1024x1024 и т.д.
-    'aspect_ratio'   => '1:1',  // Соотношение сторон: 1:1, 4:3, 16:9, 9:16
+    'width'          => 1024,   // Ширина изображения (в пикселях)
+    'height'         => 1024,   // Высота изображения (в пикселях)
     'quality'        => 'standard', // Качество: standard, hd
     'style'          => 'vivid', // Стиль: vivid, natural
     'n'              => 1,       // Количество изображений (1-4 для DALL-E)
@@ -96,10 +100,10 @@ $params = [
 
 ### Автоматическое определение параметров:
 
-Для OpenRouter моделей система автоматически определяет доступные параметры:
+На основании, указанных значений высоты и ширины система автоматически генерирует:
 
-- **DALL-E модели**: `size`, `n`, `quality`, `style`
-- **Gemini/Flux модели**: `aspect_ratio`, `image_size`, `quality`
+- **для OpenRouter моделей** допустимое значение соотношения сторон
+- **для других моделей** значение параметра `image_size` в формате `1024x1024`
 
 ---
 
@@ -152,8 +156,8 @@ class Post_Thumbnail_Generator {
                 'session_id' => 'post_' . $post_id,
                 'plugin_id' => $this->plugin_id,
                 'override_params' => [
-                    'size' => '1024x1024',
-                    'aspect_ratio' => '16:9',
+                    'width' => 1024,
+                    'height' => 1024,
                     'quality' => 'standard'
                 ]
             ]);
@@ -238,8 +242,8 @@ class WooCommerce_AI_Images {
                 'session_id' => 'product_' . $product_id,
                 'plugin_id' => 'woocommerce_ai',
                 'override_params' => [
-                    'size' => '1024x1024',
-                    'aspect_ratio' => '1:1',
+                    'width' => 1024,
+                    'height' => 1024,
                     'quality' => 'hd',
                     'style' => 'vivid'
                 ]
@@ -288,7 +292,8 @@ class AI_Image_Gallery {
         $atts = shortcode_atts([
             'theme' => 'nature',
             'count' => 4,
-            'size' => '512x512',
+            'width' => 512,
+            'height' => 512,
             'style' => 'digital art'
         ], $atts);
 
@@ -327,8 +332,8 @@ class AI_Image_Gallery {
                     'session_id' => 'gallery_' . $atts['theme'] . '_' . $i,
                     'plugin_id' => 'ai_gallery',
                     'override_params' => [
-                        'size' => $atts['size'],
-                        'aspect_ratio' => '1:1',
+                        'width' => $atts['width'],
+                        'height' => $atts['height'],
                         'quality' => 'standard'
                     ]
                 ]);
@@ -748,12 +753,13 @@ class AI_Media_Library_Integration {
                     </div>
 
                     <div class="form-column">
-                        <label for="ai-size">Size</label>
-                        <select id="ai-size">
-                            <option value="256x256">256x256</option>
-                            <option value="512x512">512x512</option>
-                            <option value="1024x1024" selected>1024x1024</option>
-                        </select>
+                        <label for="ai-width">Width</label>
+                        <input type="number" id="ai-width" value="1024" min="256" max="2048">
+                    </div>
+
+                    <div class="form-column">
+                        <label for="ai-height">Height</label>
+                        <input type="number" id="ai-height" value="1024" min="256" max="2048">
                     </div>
                 </div>
 
@@ -873,7 +879,8 @@ class AI_Media_Library_Integration {
                         nonce: aiMediaLibrary.nonce,
                         prompt: prompt,
                         model_id: $('#ai-model').val(),
-                        size: $('#ai-size').val(),
+                        width: $('#ai-width').val(),
+                        height: $('#ai-height').val(),
                         style: $('#ai-style').val(),
                         quality: $('#ai-quality').val()
                     },
@@ -1253,7 +1260,7 @@ $db->save_generation([
     'user_id' => get_current_user_id(),
     'type' => 'image',
     'prompt' => 'My image prompt',
-    'parameters' => ['size' => '1024x1024', 'quality' => 'standard'],
+    'parameters' => ['width' => 1024, 'height' => 1024, 'quality' => 'standard'],
     'response_data' => ['images' => [...]], // Ответ от AI
     'status' => 'success'
 ]);

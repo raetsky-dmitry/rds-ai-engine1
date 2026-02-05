@@ -12,7 +12,7 @@ if (!current_user_can('edit_posts')) {
 }
 
 // Настройки для теста
-$api_key = 'HHAVTH6Y...=='; // Замените на реальный ключ
+$api_key = 'YOUR_API_KEY_HERE'; // Замените на реальный ключ
 $model = 'flux'; // Или другая image модель
 $prompt = 'terminator';
 

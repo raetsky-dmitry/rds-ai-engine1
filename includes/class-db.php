@@ -51,8 +51,15 @@ class RDS_AIE_DB
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
-        KEY default_model_id (default_model_id),
-        FOREIGN KEY (default_model_id) REFERENCES {$table_prefix}models(id) ON DELETE SET NULL
+        KEY default_model_id (default_model_id)
+        /*
+         * ВНИМАНИЕ: внешний ключ здесь сознательно убран.
+         * Причина: default_model_id имеет тип BIGINT UNSIGNED, а referenced models.id — INT (знаковый).
+         * InnoDB требует СОВПАДЕНИЯ типов для FOREIGN KEY, из-за чего на «чистых» установках
+         * CREATE TABLE для таблицы ассистентов молча падал (ошибка 1215), и таблица не создавалась.
+         * Referential integrity обеспечивается на уровне кода (RDS_AIE_Model_Manager::delete()
+         * запрещает удаление модели, используемой ассистентами).
+         */
     ) $charset_collate;";
 
 		// ТАБЛИЦА ИСТОРИИ ДИАЛОГОВ (НОВАЯ)
@@ -101,10 +108,64 @@ class RDS_AIE_DB
 ) {$charset_collate};";
 
 		require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-		dbDelta($sql1);
-		dbDelta($sql2);
-		dbDelta($sql3);
-		dbDelta($sql_generations);
+
+		// Список таблиц: имя => SQL (порядок важен: сначала модели, потом ссылающиеся).
+		$tables = [
+			$wpdb->prefix . 'rds_aie_models'        => $sql1,
+			$wpdb->prefix . 'rds_aie_assistants'    => $sql2,
+			$wpdb->prefix . 'rds_aie_conversations' => $sql3,
+			$wpdb->prefix . 'rds_aie_generations'   => $sql_generations,
+		];
+
+		$created = [];
+		$errors  = [];
+
+		foreach ($tables as $table => $sql) {
+			// Штатный механизм WP (создаёт и обновляет структуру).
+			dbDelta($sql);
+
+			// dbDelta может «молча» не создать таблицу (например, из-за FOREIGN KEY,
+			// особенностей ENUM или конкретной версии MySQL). Проверяем фактическое
+			// наличие таблицы и, если её нет, создаём напрямую и логируем проблему.
+			$exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+
+			if ($exists !== $table) {
+				// Запасной вариант: прямое создание (dbDelta мог «молча» не создать).
+				$wpdb->query($sql);
+
+				if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table) {
+					$created[] = $table;
+				} else {
+					$errors[] = $table . ' (last_error: ' . $wpdb->last_error . ')';
+				}
+
+				if (defined('WP_DEBUG') && WP_DEBUG) {
+					error_log('RDS AI Engine: таблица не была создана dbDelta, повторная попытка напрямую: ' . $table . ' | last_error: ' . $wpdb->last_error);
+				}
+			}
+		}
+
+		if (!empty($created) && defined('WP_DEBUG') && WP_DEBUG) {
+			error_log('RDS AI Engine: восстановлены таблицы: ' . implode(', ', $created));
+		}
+
+		if (!empty($errors)) {
+			error_log('RDS AI Engine: НЕ удалось создать таблицы: ' . implode('; ', $errors));
+		}
+
+		return $tables;
+	}
+
+	/**
+	 * Обновление структуры БД.
+	 *
+	 * Вызывается при обновлении версии плагина (см. rds_aie_check_update в rds-ai-engine.php).
+	 * dbDelta обрабатывает и создание, и изменение структуры, поэтому здесь достаточно
+	 * повторного запуска create_tables().
+	 */
+	public function update_tables()
+	{
+		return $this->create_tables();
 	}
 
 	/**
@@ -148,7 +209,17 @@ class RDS_AIE_DB
 
 		$data = wp_parse_args($data, $defaults);
 
-		return $wpdb->insert($table_name, $data);
+		$result = $wpdb->insert($table_name, $data);
+
+		// Если вставка не удалась — логируем причину (dbDelta/INSERT «молчат» об ошибках).
+		if (false === $result) {
+			error_log('RDS AI Engine: не удалось сохранить сообщение в историю (rds_aie_conversations). '
+				. 'last_error: ' . $wpdb->last_error
+				. ' | session_id: ' . $data['session_id']
+				. ' | role: ' . $data['role']);
+		}
+
+		return $result;
 	}
 
 	/**

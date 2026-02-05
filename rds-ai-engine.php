@@ -136,16 +136,56 @@ function rds_aie_init()
 
 	// Инициализация главного класса
 	$GLOBALS['rds_aie'] = RDS_AIE_Main::get_instance();
-	
+
+	// Самовосстановление структуры БД: если при активации часть таблиц
+	// не создалась (dbDelta умеет «молча» глотать ошибки), таблицы будут
+	// созданы при первом же входе в админку.
+	add_action('admin_init', 'rds_aie_ensure_db_tables');
+
 	// Добавляем хук для автоматической очистки
 	if (!wp_next_scheduled('rds_aie_cleanup_generations')) {
 		wp_schedule_event(time(), 'hourly', 'rds_aie_cleanup_generations');
 	}
-	
+
 	// Хук для выполнения очистки
 	add_action('rds_aie_cleanup_generations', 'rds_aie_perform_cleanup_generations');
 }
 add_action('plugins_loaded', 'rds_aie_init');
+
+/**
+ * Самовосстановление таблиц БД плагина.
+ *
+ * Если при активации (или обновлении) часть таблиц не была создана —
+ * например, dbDelta молча проглотил ошибку создания, — структура будет
+ * восстановлена при первом же входе в админку.
+ */
+function rds_aie_ensure_db_tables()
+{
+	global $wpdb;
+
+	// Критичные для работы плагина таблицы.
+	$conversations_table = $wpdb->prefix . 'rds_aie_conversations';
+	$assistants_table    = $wpdb->prefix . 'rds_aie_assistants';
+
+	$conversations_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $conversations_table));
+	$assistants_exists    = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $assistants_table));
+
+	// Если все таблицы на месте — ничего делать не нужно.
+	if ($conversations_exists === $conversations_table && $assistants_exists === $assistants_table) {
+		return;
+	}
+
+	rds_aie_autoloader('RDS_AIE_DB');
+
+	if (class_exists('RDS_AIE_DB')) {
+		$db = new RDS_AIE_DB();
+		$db->create_tables();
+
+		if (defined('WP_DEBUG') && WP_DEBUG) {
+			error_log('RDS AI Engine: выполнено самовосстановление структуры БД.');
+		}
+	}
+}
 
 // Хуки активации и деактивации
 register_activation_hook(__FILE__, 'rds_aie_activate_plugin');
@@ -267,6 +307,10 @@ if (!function_exists('rds_aie_generate_image')) {
 if (!function_exists('rds_aie_generate')) {
 	function rds_aie_generate($input, $params = [])
 	{
+		if (defined('WP_DEBUG') && WP_DEBUG) {
+			error_log('-- RDS AI Engine ds_aie_generate Input Params: ' . json_encode($params));
+		}
+
 		$ai_engine = RDS_AIE_Main::get_instance();
 
 		$defaults = [
@@ -292,6 +336,11 @@ if (!function_exists('rds_aie_generate')) {
 				$params['message'] = $input;
 			}
 		}
+
+		if (defined('WP_DEBUG') && WP_DEBUG) {
+			error_log('-- RDS AI Engine ds_aie_generate Output Params: ' . json_encode($params));
+		}
+
 
 		try {
 			return $ai_engine->generate($params);
@@ -344,36 +393,37 @@ if (!function_exists('rds_aie_get_default_model_by_type')) {
 /**
  * Выполнение очистки старых записей генерации изображений
  */
-function rds_aie_perform_cleanup_generations() {
-    error_log('RDS AI Engine: Automatic cleanup triggered');
-    
-    // Проверяем, включена ли автоматическая очистка
-    $settings = get_option('rds_aie_history_settings', []);
-    
-    error_log('RDS AI Engine: Settings retrieved: ' . print_r($settings, true));
-    
-    if (isset($settings['cleanup_enabled']) && $settings['cleanup_enabled']) {
-        $hours = isset($settings['image_generation_retention_hours']) ? 
-            intval($settings['image_generation_retention_hours']) : 1;
-        
-        error_log("RDS AI Engine: Cleaning up images older than $hours hours");
-            
-        if (class_exists('RDS_AIE_Main')) {
-            $ai_engine = RDS_AIE_Main::get_instance();
-            $history_manager = $ai_engine->get_history_manager();
-            
-            if ($history_manager) {
-                $result = $history_manager->cleanup_old_generations($hours);
-                error_log("RDS AI Engine: Cleaned up $result image generation records");
-            } else {
-                error_log("RDS AI Engine: Could not get history manager instance");
-            }
-        } else {
-            error_log("RDS AI Engine: Main class does not exist");
-        }
-    } else {
-        error_log("RDS AI Engine: Automatic cleanup is disabled");
-    }
+function rds_aie_perform_cleanup_generations()
+{
+	error_log('RDS AI Engine: Automatic cleanup triggered');
+
+	// Проверяем, включена ли автоматическая очистка
+	$settings = get_option('rds_aie_history_settings', []);
+
+	error_log('RDS AI Engine: Settings retrieved: ' . print_r($settings, true));
+
+	if (isset($settings['cleanup_enabled']) && $settings['cleanup_enabled']) {
+		$hours = isset($settings['image_generation_retention_hours']) ?
+			intval($settings['image_generation_retention_hours']) : 1;
+
+		error_log("RDS AI Engine: Cleaning up images older than $hours hours");
+
+		if (class_exists('RDS_AIE_Main')) {
+			$ai_engine = RDS_AIE_Main::get_instance();
+			$history_manager = $ai_engine->get_history_manager();
+
+			if ($history_manager) {
+				$result = $history_manager->cleanup_old_generations($hours);
+				error_log("RDS AI Engine: Cleaned up $result image generation records");
+			} else {
+				error_log("RDS AI Engine: Could not get history manager instance");
+			}
+		} else {
+			error_log("RDS AI Engine: Main class does not exist");
+		}
+	} else {
+		error_log("RDS AI Engine: Automatic cleanup is disabled");
+	}
 }
 
 // Вспомогательная функция для тестирования URL

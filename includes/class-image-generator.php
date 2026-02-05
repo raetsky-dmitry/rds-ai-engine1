@@ -7,10 +7,12 @@
 class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 {
 	private $default_params = [
-		'size' => '1024x1024',
+		// 'size' => '1024x1024',
 		'quality' => 'standard',
 		'style' => 'vivid',
 		'n' => 1,
+		'width' => '1024',
+		'height' => '1024',
 		'response_format' => 'b64_json',
 		'seed' => null
 	];
@@ -30,6 +32,12 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 	 */
 	public function validate_params($params)
 	{
+		// var_dump($params);
+		if (defined('WP_DEBUG') && WP_DEBUG) {
+			error_log('RDS AI Engine Image Respons Params: ' . json_encode($params));
+		}
+
+
 		// Проверка обязательных полей
 		if (empty($params['prompt'])) {
 			throw new Exception(__('Prompt is required for image generation', 'rds-ai-engine'));

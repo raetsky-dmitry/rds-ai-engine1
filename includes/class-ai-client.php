@@ -262,14 +262,32 @@ class RDS_AIE_AI_Client
 			$this->save_system_prompt_if_needed($assistant_id, $session_id, $plugin_id, $system_prompt);
 		}
 
-		// Добавляем историю диалога, если включена
-		if ($assistant && $assistant->history_enabled) {
+		// Определяем настройки истории.
+		// Если выбран ассистент — используем его настройки;
+		// если ассистент не выбран (чат с моделью напрямую) — настройки
+		// по умолчанию плагина (rds_aie_default_settings).
+		if ($assistant) {
+			$history_enabled = (bool) $assistant->history_enabled;
+			$history_messages_count = (int) $assistant->history_messages_count;
+		} else {
+			$default_settings = get_option('rds_aie_default_settings', [
+				'history_enabled' => true,
+				'history_messages_count' => 10
+			]);
+			$history_enabled = !empty($default_settings['history_enabled']);
+			$history_messages_count = isset($default_settings['history_messages_count'])
+				? (int) $default_settings['history_messages_count']
+				: 10;
+		}
+
+		// Добавляем историю диалога, если она включена
+		if ($history_enabled) {
 			$history_messages = $this->history_manager->get_assistant_history(
 				$session_id,
 				$assistant_id,
 				[
-					'history_enabled' => $assistant->history_enabled,
-					'history_messages_count' => $assistant->history_messages_count
+					'history_enabled' => $history_enabled,
+					'history_messages_count' => $history_messages_count
 				]
 			);
 
@@ -297,8 +315,8 @@ class RDS_AIE_AI_Client
 			error_log('RDS AI Engine - Prepared messages: ' . json_encode([
 				'total_messages' => count($messages),
 				'system_prompt_length' => strlen($system_prompt),
-				'history_messages_count' => $assistant ? $assistant->history_messages_count : 0,
-				'history_enabled' => $assistant ? $assistant->history_enabled : false,
+				'history_messages_count' => $history_messages_count,
+				'history_enabled' => $history_enabled,
 				'messages_sample' => array_map(function ($msg) {
 					return [
 						'role' => $msg['role'],
