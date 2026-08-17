@@ -55,17 +55,10 @@ $result = rds_aie_generate(
     'A futuristic city skyline at night',
     [
         'model_id' => 1,
-        'override_params' => [
-            'width' => '1024',
-            'height' => '1024',
-            'n' => 1,
-            'quality' => 'standard',
-            'seed' => 42,
-            'response_format' => 'b64_json'
-        ],
-    'session_id' => 'user_' . get_current_user_id(),
-    'plugin_id' => 'my_plugin'
-    ]);
+        'width' => '1024',
+        'heght' => '1024'
+    ]
+);
 
 // Генерация текста (обратная совместимость)
 $text_result = rds_aie_generate(
