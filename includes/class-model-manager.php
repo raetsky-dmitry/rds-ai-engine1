@@ -194,6 +194,19 @@ class RDS_AIE_Model_Manager
 	}
 
 	/**
+	 * Получение моделей для эмбеддингов
+	 */
+	public function get_embedding_models() {
+		global $wpdb;
+		$table_name = $wpdb->prefix . 'rds_aie_models';
+		return $wpdb->get_results($wpdb->prepare(
+			"SELECT * FROM {$table_name} WHERE model_type = %s OR model_type = %s ORDER BY name ASC",
+			'embedding',
+			'both'
+		));
+	}
+	
+	/**
 	 * Получение image-параметров модели
 	 */
 	public function get_image_params($model_id)

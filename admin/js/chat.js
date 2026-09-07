@@ -54,26 +54,27 @@
   /**
    * Отправка сообщения
    */
-  function sendMessage() {
-    const message = $("#chatMessage").val().trim();
-    const modelId = $("#chat_model").val();
-    const assistantId = $("#chat_assistant").val();
+   function sendMessage() {
+     const message = $("#chatMessage").val().trim();
+     const modelId = $("#chat_model").val();
+     const assistantId = $("#chat_assistant").val();
+     const agentId = $("#chat_agent").val(); // <-- Получаем ID агента
 
-    if (!message) {
-      return;
-    }
+     if (!message) {
+       return;
+     }
 
-    // Проверка выбора модели или ассистента
-    if (!modelId && !assistantId) {
-      alert(
-        rds_aie_ajax.select_model_or_assistant ||
-          "Please select a model or assistant.",
-      );
-      return;
-    }
+     // Проверка выбора модели, ассистента ИЛИ агента
+     if (!modelId && !assistantId && !agentId) {
+       alert(
+         rds_aie_ajax.select_model_or_assistant ||
+           "Please select a model, assistant or agent.",
+       );
+       return;
+     }
 
-    // Добавление сообщения пользователя в чат
-    addMessage("user", message);
+     // Добавление сообщения пользователя в чат
+     addMessage("user", message);
 
     // Очистка поля ввода
     $("#chatMessage").val("");
@@ -104,6 +105,7 @@
         message: message,
         model_id: modelId,
         assistant_id: assistantId,
+        agent_id: $("#chat_agent").val(),
         session_id: currentSessionId,
         debug: 1,
       },
@@ -210,53 +212,36 @@
   /**
    * Переключение вкладок отладки
    */
-  function switchDebugTab(tab) {
-    // Убираем активный класс со всех вкладок
-    $(".debug-tab").removeClass("active");
-    $(".debug-tab-content").removeClass("active");
-
-    // Специальная обработка для различных вкладок
-    let targetId = '';
-    switch(tab) {
-      case 'request':
-        targetId = 'debugRequest';
-        break;
-      case 'history':
-        targetId = 'debugHistory';
-        break;
-      case 'fullrequest':
-        targetId = 'debugFullRequest';
-        break;
-      case 'response':
-        targetId = 'debugResponse';
-        break;
-      default:
-        targetId = `debug${tab.charAt(0).toUpperCase() + tab.slice(1)}`;
-    }
-
-    // Добавляем активный класс выбранной вкладке и контенту
-    $(`.debug-tab[data-tab="${tab}"]`).addClass("active");
-    $(`#${targetId}`).addClass("active");
-  }
+   function switchDebugTab(tab) {
+     // Убираем активный класс со всех вкладок и контента
+     $(".debug-tab").removeClass("active");
+     $(".debug-tab-content").removeClass("active");
+     
+     // Добавляем активный класс выбранной вкладке
+     $(`.debug-tab[data-tab="${tab}"]`).addClass("active");
+     
+     // Находим соответствующий контент по ID
+     const targetId = `#debug${tab.charAt(0).toUpperCase() + tab.slice(1)}`;
+     $(targetId).addClass("active");
+   }
 
   /**
    * Переключение отладки
    */
-  function toggleDebug() {
-    const debugContainer = $("#debugContainer");
-    const isVisible = debugContainer.is(":visible");
-
-    if (isVisible) {
-      debugContainer.hide();
-      $("#toggleDebug").text(rds_aie_ajax.show_debug || "Show Debug");
-    } else {
-      debugContainer.show();
-      $("#toggleDebug").text(rds_aie_ajax.hide_debug || "Hide Debug");
-
-      // Обновляем информацию, если есть данные
-      updateDebugInfo();
-    }
-  }
+   function toggleDebug() {
+     const debugContainer = $("#debugContainer");
+     const isVisible = debugContainer.is(":visible");
+     
+     if (isVisible) {
+       debugContainer.slideUp(200);
+       $("#toggleDebug").text(rds_aie_ajax.show_debug || "Show Debug");
+     } else {
+       debugContainer.slideDown(200);
+       $("#toggleDebug").text(rds_aie_ajax.hide_debug || "Hide Debug");
+       // Обновляем информацию, если есть данные
+       updateDebugInfo();
+     }
+   }
 
   /**
    * Добавление сообщения в чат

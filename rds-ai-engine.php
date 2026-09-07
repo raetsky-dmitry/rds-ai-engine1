@@ -4,7 +4,7 @@
  * Plugin Name: RDS AI Engine
  * Plugin URI: https://github.com/your-username/rds-ai-engine
  * Description: Базовый плагин для интеграции с ИИ в WordPress. Предоставляет управление моделями, ассистентами, базой знаний и историей диалогов.
- * Version: 1.0.0
+ * Version: 2.0.6
  * Author: Your Name
  * License: GPL v2 or later
  * Text Domain: rds-ai-engine
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Константы плагина
-define('RDS_AIE_VERSION', '1.0.0');
+define('RDS_AIE_VERSION', '2.0.6');
 define('RDS_AIE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RDS_AIE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RDS_AIE_PLUGIN_BASENAME', plugin_basename(__FILE__));
@@ -60,6 +60,23 @@ if (!function_exists('rds_aie_chat')) {
 		], $args));
 	}
 }
+
+/**
+ * Разрешаем загрузку .md файлов в медиатеку WordPress
+ */
+add_filter('upload_mimes', function($mimes) {
+    $mimes['md'] = 'text/markdown';
+	$mimes['md'] = 'text/plain';
+    return $mimes;
+});
+
+add_filter('wp_check_filetype_and_ext', function($data, $file, $filename, $mimes) {
+    if ($data['ext'] === 'md') {
+        $data['type'] = 'text/markdown';
+        $data['proper_filename'] = $filename;
+    }
+    return $data;
+}, 10, 4);
 
 // Простой автозагрузчик классов
 function rds_aie_autoloader($class_name)
@@ -464,5 +481,37 @@ if (!function_exists('rds_aie_test_api_url')) {
 			'message' => $body,
 			'code' => $code
 		];
+	}
+}
+
+if (!function_exists('rds_aie_agent')) {
+	function rds_aie_agent($agent_id, $message, $session_id = '') {
+		$ai_engine = RDS_AIE_Main::get_instance();
+		try {
+			return $ai_engine->get_agent_engine()->run($agent_id, $message, $session_id);
+		} catch (Exception $e) {
+			return new WP_Error('agent_error', $e->getMessage());
+		}
+	}
+}
+
+if (!function_exists('rds_aie_register_skill')) {
+	/**
+	 * Регистрация навыка из стороннего плагина
+	 * @param array $data ['name' => 'seo_analyst', 'description' => '...', 'url' => '/path/to/skill.md']
+	 * @return int|WP_Error ID навыка или ошибка
+	 */
+	function rds_aie_register_skill($data) {
+		try {
+			$main = RDS_AIE_Main::get_instance();
+			// Skill Manager еще не инициализирован в Main, создаем напрямую
+			if (!class_exists('RDS_AIE_Skill_Manager')) {
+				require_once RDS_AIE_PLUGIN_DIR . 'includes/class-skill-manager.php';
+			}
+			$manager = new RDS_AIE_Skill_Manager($main->get_db());
+			return $manager->register($data);
+		} catch (Exception $e) {
+			return new WP_Error('skill_registration_error', $e->getMessage());
+		}
 	}
 }

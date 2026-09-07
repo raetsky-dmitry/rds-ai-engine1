@@ -20,8 +20,10 @@ class RDS_AIE_Main
 	private $history_manager = null;
 	private $db = null;
 	private $ai_client = null;
-	private $generator_factory = null; // Добавляем это
-
+	private $generator_factory = null;
+	private $agent_manager = null;
+	private $agent_engine = null;
+	private $rag_engine = null;
 	/**
 	 * Конструктор (закрытый для Singleton)
 	 */
@@ -218,8 +220,35 @@ class RDS_AIE_Main
 			$this->history_manager,
 			$this->generator_factory  // Передаём фабрику
 		);
+
+		// Инициализация менеджера агентов и реестра инструментов
+		if (!class_exists('RDS_AIE_Tool_Registry')) {
+			require_once RDS_AIE_PLUGIN_DIR . 'includes/class-tool-registry.php';
+		}
+		if (!class_exists('RDS_AIE_Agent_Manager')) {
+			require_once RDS_AIE_PLUGIN_DIR . 'includes/class-agent-manager.php';
+		}
+		if (!class_exists('RDS_AIE_Agent_Engine')) {
+			require_once RDS_AIE_PLUGIN_DIR . 'includes/class-agent-engine.php';
+		}
+
+		$this->agent_manager = new RDS_AIE_Agent_Manager($this->db);
+		$this->agent_engine = new RDS_AIE_Agent_Engine($this->db);
 	}
 
+	public function get_agent_manager() {
+		if (null === $this->agent_manager) {
+			$this->init_components();
+		}
+		return $this->agent_manager;
+	}
+
+	public function get_agent_engine() {
+		if (null === $this->agent_engine) {
+			$this->init_components();
+		}
+		return $this->agent_engine;
+	}
 	/**
 	 * Получить менеджер моделей (с проверкой инициализации)
 	 */
@@ -385,20 +414,17 @@ class RDS_AIE_Main
 	/**
 	 * AJAX обработчик тестового чата
 	 */
-	public function ajax_test_chat()
+		public function ajax_test_chat()
 	{
-		// Проверка nonce
 		check_ajax_referer('rds_aie_chat_nonce', 'nonce');
-
-		// Проверка прав
 		if (!current_user_can('edit_posts')) {
 			wp_die('Unauthorized', 401);
 		}
 
-		// Получение данных
 		$message = isset($_POST['message']) ? sanitize_textarea_field($_POST['message']) : '';
 		$model_id = isset($_POST['model_id']) ? intval($_POST['model_id']) : 0;
 		$assistant_id = isset($_POST['assistant_id']) ? intval($_POST['assistant_id']) : 0;
+		$agent_id = isset($_POST['agent_id']) ? intval($_POST['agent_id']) : 0; // <-- Новое
 		$session_id = isset($_POST['session_id']) ? sanitize_text_field($_POST['session_id']) : '';
 
 		if (empty($message)) {
@@ -406,35 +432,46 @@ class RDS_AIE_Main
 		}
 
 		try {
-			// Сначала получаем AI клиент
-			$ai_client = $this->get_ai_client();
+			$response = '';
+			
+			// Логика выбора: Агент -> Ассистент -> Модель
+			if ($agent_id > 0) {
+				// Используем новый движок агентов
+				$response = rds_aie_agent($agent_id, $message, $session_id);
+				if (is_wp_error($response)) {
+					throw new Exception($response->get_error_message());
+				}
+			} else {
+				// Старая логика для ассистентов/моделей
+				$ai_client = $this->get_ai_client();
+				$response = $ai_client->chat_completion([
+					'model_id' => $model_id,
+					'assistant_id' => $assistant_id,
+					'message' => $message,
+					'session_id' => $session_id,
+					'plugin_id' => 'test_chat'
+				]);
+			}
 
-			// Получаем отладочную информацию ДО отправки запроса
-			$debug_info = $this->get_debug_info_for_chat($session_id, $assistant_id, $message, $model_id);
-
-			// Получение ответа от ИИ
-			$response = $ai_client->chat_completion([
-				'model_id' => $model_id,
-				'assistant_id' => $assistant_id,
-				'message' => $message,
+			// Отладочная информация (упрощенная для агентов)
+			$debug_info = [
+				'type' => $agent_id ? 'agent' : 'assistant',
+				'id' => $agent_id ?: $assistant_id,
 				'session_id' => $session_id,
-				'plugin_id' => 'test_chat'
-			]);
+				'timestamp' => current_time('mysql')
+			];
 
-			$result = [
+			wp_send_json_success([
 				'response' => $response,
 				'message' => __('Success', 'rds-ai-engine'),
 				'debug' => $debug_info
-			];
-
-			wp_send_json_success($result);
-		} catch (Exception $e) {
-			wp_send_json_error([
-				'message' => $e->getMessage()
 			]);
+
+		} catch (Exception $e) {
+			wp_send_json_error(['message' => $e->getMessage()]);
 		}
 	}
-
+	
 	/**
 	 * Получение отладочной информации для чата
 	 */
@@ -501,7 +538,6 @@ class RDS_AIE_Main
 		return $this->get_ai_client()->chat_completion($params);
 	}
 
-// includes/class-main.php - добавить в класс RDS_AIE_Main:
 
 	/**
 	 * Создание ассистента программно
@@ -784,4 +820,27 @@ class RDS_AIE_Main
 
 		return $this->get_ai_client()->test_image_generation($model_id, $test_prompt);
 	}
+
+	/**
+	 * Получить экземпляр DB (с проверкой инициализации)
+	 */
+	public function get_db() {
+		if (null === $this->db) {
+			$this->init_components();
+		}
+		return $this->db;
+	}	
+	/**
+	 * Получить экземпляр RAG Engine
+	 */
+	public function get_rag_engine() {
+		if (null === $this->rag_engine) {
+			if (!class_exists('RDS_AIE_RAG_Engine')) {
+				require_once RDS_AIE_PLUGIN_DIR . 'includes/class-rag-engine.php';
+			}
+			$this->rag_engine = new RDS_AIE_RAG_Engine($this->db);
+		}
+		return $this->rag_engine;
+	}
+
 }

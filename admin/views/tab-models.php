@@ -131,8 +131,11 @@ if (isset($_GET['delete'])) {
 							<option value="both" <?php selected($edit_model ? $edit_model->model_type : 'text', 'both'); ?>>
 								<?php _e('Text and Image Generation', 'rds-ai-engine'); ?>
 							</option>
+							<option value="embedding" <?php selected($edit_model ? $edit_model->model_type : 'text', 'embedding'); ?>>
+								<?php _e('Embedding', 'rds-ai-engine'); ?>
+							</option>
 						</select>
-						<p class="description"><?php _e('Type of AI model (text, image, or both).', 'rds-ai-engine'); ?></p>
+						<p class="description"><?php _e('Type of AI model (text, image, both or embedding).', 'rds-ai-engine'); ?></p>
 					</td>
 				</tr>
 				<tr>
@@ -289,4 +292,10 @@ if (isset($_GET['delete'])) {
 		color: #2e7d32;
 		border: 1px solid #c8e6c9;
 	}
-</style>
+
+	.model-type-embedding {
+		background: #eceff1;
+		color: #455a64;
+		border: 1px solid #cfd8dc;
+	}
+	</style>

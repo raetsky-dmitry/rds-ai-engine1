@@ -1,54 +1,56 @@
 <?php
-
 /**
- * Вкладка тестового чата
+ * Вкладка тестового чата (обновленная)
  */
-
 $main = RDS_AIE_Main::get_instance();
 $model_manager = $main->get_model_manager();
 $assistant_manager = $main->get_assistant_manager();
+$agent_manager = $main->get_agent_manager(); // <-- Новое
 
 // Получаем только текстовые модели
 $text_models = $model_manager->get_models_by_type('text');
 $both_models = $model_manager->get_models_by_type('both');
 $models = array_merge($text_models, $both_models);
-
 $assistants = $assistant_manager->get_all();
+$agents = $agent_manager->get_all(); // <-- Новое
 ?>
-
 <div class="rds-aie-chat">
 	<h2><?php _e('Test Chat', 'rds-ai-engine'); ?></h2>
-	<p class="description"><?php _e('Test your AI models and assistants in real-time.', 'rds-ai-engine'); ?></p>
-
+	<p class="description"><?php _e('Test your AI models, assistants and agents in real-time.', 'rds-ai-engine'); ?></p>
+	
 	<div class="chat-container">
 		<div class="chat-controls">
 			<table class="form-table">
 				<tr>
-					<th scope="row">
-						<label for="chat_model"><?php _e('AI Model', 'rds-ai-engine'); ?></label>
-					</th>
+					<th scope="row"><label for="chat_model"><?php _e('AI Model', 'rds-ai-engine'); ?></label></th>
 					<td>
 						<select id="chat_model" class="regular-text">
 							<option value=""><?php _e('-- Select Model --', 'rds-ai-engine'); ?></option>
 							<?php foreach ($models as $model): ?>
-								<option value="<?php echo esc_attr($model->id); ?>">
-									<?php echo esc_html($model->name); ?>
-								</option>
+								<option value="<?php echo esc_attr($model->id); ?>"><?php echo esc_html($model->name); ?></option>
 							<?php endforeach; ?>
 						</select>
 					</td>
 				</tr>
 				<tr>
-					<th scope="row">
-						<label for="chat_assistant"><?php _e('Assistant', 'rds-ai-engine'); ?></label>
-					</th>
+					<th scope="row"><label for="chat_assistant"><?php _e('Assistant', 'rds-ai-engine'); ?></label></th>
 					<td>
 						<select id="chat_assistant" class="regular-text">
 							<option value=""><?php _e('-- Select Assistant --', 'rds-ai-engine'); ?></option>
 							<?php foreach ($assistants as $assistant): ?>
-								<option value="<?php echo esc_attr($assistant->id); ?>">
-									<?php echo esc_html($assistant->name); ?>
-								</option>
+								<option value="<?php echo esc_attr($assistant->id); ?>"><?php echo esc_html($assistant->name); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</td>
+				</tr>
+				<!-- Новое поле для Агентов -->
+				<tr>
+					<th scope="row"><label for="chat_agent"><?php _e('Agent', 'rds-ai-engine'); ?></label></th>
+					<td>
+						<select id="chat_agent" class="regular-text">
+							<option value=""><?php _e('-- Select Agent --', 'rds-ai-engine'); ?></option>
+							<?php foreach ($agents as $agent): ?>
+								<option value="<?php echo esc_attr($agent->id); ?>"><?php echo esc_html($agent->name); ?></option>
 							<?php endforeach; ?>
 						</select>
 					</td>
@@ -90,17 +92,11 @@ $assistants = $assistant_manager->get_all();
 		<div class="chat-input">
 			<div class="input-container">
 				<textarea id="chatMessage" placeholder="<?php _e('Type your message here...', 'rds-ai-engine'); ?>"></textarea>
-				<button id="sendChatMessage" class="button button-primary">
-					<?php _e('Send', 'rds-ai-engine'); ?>
-				</button>
+				<button id="sendChatMessage" class="button button-primary"><?php _e('Send', 'rds-ai-engine'); ?></button>
 			</div>
 			<div class="actions-container">
-				<button id="clearChat" class="button button-secondary">
-					<?php _e('Clear Chat', 'rds-ai-engine'); ?>
-				</button>
-				<button id="toggleDebug" class="button button-secondary">
-					<?php _e('Show Debug', 'rds-ai-engine'); ?>
-				</button>
+				<button id="clearChat" class="button button-secondary"><?php _e('Clear Chat', 'rds-ai-engine'); ?></button>
+				<button id="toggleDebug" class="button button-secondary"><?php _e('Show Debug', 'rds-ai-engine'); ?></button>
 			</div>
 		</div>
 	</div>
