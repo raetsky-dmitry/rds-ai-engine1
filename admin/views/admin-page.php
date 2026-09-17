@@ -13,9 +13,10 @@ $tabs = [
 	'assistants' => __('Assistants', 'rds-ai-engine'),
 	'agents' => __('Agents', 'rds-ai-engine'),
 	'skills' => __('Skills', 'rds-ai-engine'),
-	'rag-settings' => __('RAG Settings', 'rds-ai-engine'), // <-- Новое
-	'knowledge-base' => __('Knowledge Base', 'rds-ai-engine'), // <-- Новое
+	'rag-settings' => __('RAG Settings', 'rds-ai-engine'), 
+	'knowledge-base' => __('Knowledge Base', 'rds-ai-engine'), 
 	'history' => __('History', 'rds-ai-engine'),
+	'integrations'   => __('Integrations', 'rds-ai-engine'),
 	'chat' => __('Test Chat', 'rds-ai-engine'),
 	'image-test' => __('Image Generation', 'rds-ai-engine')
 ];

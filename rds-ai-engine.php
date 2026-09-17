@@ -4,7 +4,7 @@
  * Plugin Name: RDS AI Engine
  * Plugin URI: https://github.com/your-username/rds-ai-engine
  * Description: Базовый плагин для интеграции с ИИ в WordPress. Предоставляет управление моделями, ассистентами, базой знаний и историей диалогов.
- * Version: 2.0.6
+ * Version: 2.1.0
  * Author: Your Name
  * License: GPL v2 or later
  * Text Domain: rds-ai-engine
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Константы плагина
-define('RDS_AIE_VERSION', '2.0.6');
+define('RDS_AIE_VERSION', '2.1.0');
 define('RDS_AIE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('RDS_AIE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RDS_AIE_PLUGIN_BASENAME', plugin_basename(__FILE__));

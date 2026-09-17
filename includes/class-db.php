@@ -113,6 +113,7 @@ class RDS_AIE_DB
 		$sql_agents = "CREATE TABLE IF NOT EXISTS {$table_prefix}agents (
 			id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
 			name VARCHAR(255) NOT NULL,
+			slug VARCHAR(100) DEFAULT '';
 			system_prompt TEXT NOT NULL,
 			default_model_id BIGINT(20) UNSIGNED,
 			max_iterations INT DEFAULT 5,
@@ -685,6 +686,18 @@ class RDS_AIE_DB
 		global $wpdb;
 		$table_name = $wpdb->prefix . 'rds_aie_agents';
 		return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table_name} WHERE id = %d", $id));
+	}
+
+	/**
+	 * Получение агента по slug
+	 */
+	public function get_agent_by_slug($slug) {
+		global $wpdb;
+		$table_name = $wpdb->prefix . 'rds_aie_agents';
+		return $wpdb->get_row($wpdb->prepare(
+			"SELECT * FROM {$table_name} WHERE slug = %s LIMIT 1",
+			sanitize_key($slug)
+		)); 
 	}
 
 	/**

@@ -46,32 +46,58 @@ class RDS_AIE_Agent_Manager {
 	/**
 	 * Привязка инструмента к агенту
 	 */
-	public function assign_tool($agent_id, $tool_name, $schema) {
+	public function assign_tool($agent_id, $tools) {
 		global $wpdb;
 		$table_name = $wpdb->prefix . 'rds_aie_agent_tools';
 		
-		// Проверяем, не привязан ли уже этот инструмент
-		$exists = $wpdb->get_var($wpdb->prepare(
-			"SELECT id FROM {$table_name} WHERE agent_id = %d AND tool_name = %s",
-			$agent_id,
-			$tool_name
-		));
+		// // Проверяем, не привязан ли уже этот инструмент
+		// $exists = $wpdb->get_var($wpdb->prepare(
+		// 	"SELECT id FROM {$table_name} WHERE agent_id = %d AND tool_name = %s",
+		// 	$agent_id,
+		// 	$tool_name
+		// ));
 
-		if ($exists) {
-			// Обновляем схему если нужно
-			$wpdb->update($table_name, [
-				'tool_schema' => wp_json_encode($schema)
-			], ['id' => $exists]);
-			return $exists;
-		} else {
-			// Вставляем новый
-			$wpdb->insert($table_name, [
-				'agent_id' => $agent_id,
-				'tool_name' => $tool_name,
-				'tool_schema' => wp_json_encode($schema),
-				'is_active' => 1
-			]);
-			return $wpdb->insert_id;
+		// if ($exists) {
+		// 	// Обновляем схему если нужно
+		// 	$wpdb->update($table_name, [
+		// 		'tool_schema' => wp_json_encode($schema)
+		// 	], ['id' => $exists]);
+		// 	return $exists;
+		// } else {
+		// 	// Вставляем новый
+		// 	$wpdb->insert($table_name, [
+		// 		'agent_id' => $agent_id,
+		// 		'tool_name' => $tool_name,
+		// 		'tool_schema' => wp_json_encode($schema),
+		// 		'is_active' => 1
+		// 	]);
+		// 	return $wpdb->insert_id;
+		// }
+
+		// Удаляем старые привязки
+		$wpdb->delete($table_name, ['agent_id' => intval($agent_id)]);
+
+		// Добавляем новые
+		$aded_tools_ids = [];
+		if (!empty($tools)) {
+			foreach ($tools as $tool) {
+				$wpdb->insert($table_name, [
+					'agent_id' => $agent_id,
+					'tool_name' => $tool['tool_name'],
+					'tool_schema' => wp_json_encode($tool['tool_schema']),
+					'is_active' => 1
+				]);
+				$aded_tools_ids[] = $wpdb->insert_id;
+			}
 		}
+		return $aded_tools_ids;
 	}
+
+	/**
+	 * Получение инструментов агента
+	 */
+	public function get_agent_tools($agent_id) {
+		return $this->db->get_agent_tools($agent_id);
+	}
+	
 }

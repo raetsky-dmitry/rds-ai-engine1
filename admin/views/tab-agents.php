@@ -54,11 +54,20 @@ if (isset($_POST['action'])) {
 
                     // Привязка инструментов
                     if ($saved_id && isset($_POST['tools'])) {
+                        error_log('[RDS AI Engine DEBUG] Saving agent tools: ' . print_r($_POST['tools'], true));
+                        $new_tools = [];
                         foreach ($_POST['tools'] as $tool_name) {
                             if (isset($all_tools[$tool_name])) {
-                                $agent_manager->assign_tool($saved_id, $tool_name, $all_tools[$tool_name]['schema']);
+                                // $agent_manager->assign_tool($saved_id, $tool_name, $all_tools[$tool_name]['schema']);
+                                $new_tools[]= [
+                                    'tool_name' => $tool_name,
+                                    'tool_schema' => $all_tools[$tool_name]['schema']
+                                ];
                             }
                         }
+                        $agent_manager->assign_tool($saved_id, $new_tools);
+                    } elseif ($saved_id) { 
+                        $agent_manager->assign_tool($saved_id, []);
                     }
 
 
@@ -192,6 +201,18 @@ if (isset($_POST['action'])) {
                 <tr>
                     <th><label><?php _e('Available Tools', 'rds-ai-engine'); ?></label></th>
                     <td>
+
+                        <?php
+                        // Получаем текущие инструменты агента (если редактируем)
+                        $agent_tools = [];
+                        if ($edit_agent) {
+                            $agent_tools_objs = $agent_manager->get_agent_tools($edit_agent->id);
+                            foreach ($agent_tools_objs as $t) {
+                                $agent_tools[] = $t->tool_name;
+                            }
+                        }
+                        ?>
+                    
                         <?php if (empty($all_tools)): ?>
                             <p><?php _e('No tools registered yet.', 'rds-ai-engine'); ?></p>
                         <?php else: ?>
@@ -199,7 +220,8 @@ if (isset($_POST['action'])) {
                                 <?php foreach ($all_tools as $tool_name => $tool_data): ?>
                                 <li>
                                     <label>
-                                        <input type="checkbox" name="tools[]" value="<?php echo esc_attr($tool_name); ?>" checked>
+                                        <input type="checkbox" name="tools[]" value="<?php echo esc_attr($tool_name); ?>" 
+                                            <?php checked(in_array($tool_name, $agent_tools)); ?>>
                                         <strong><?php echo esc_html($tool_name); ?></strong>: <?php echo esc_html($tool_data['description']); ?>
                                     </label>
                                 </li>

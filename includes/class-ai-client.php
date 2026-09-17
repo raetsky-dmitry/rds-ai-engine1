@@ -77,7 +77,7 @@ class RDS_AIE_AI_Client
 				'status' => 'pending'
 			]);
 
-			// Подготавливаем запрос - для OpenRouter используем chat/completions
+			// Подготавливаем запрос - для OpenRouter используем /images
 			$request_data = $generator->prepare_request([]);
 
 			// Получаем модель
@@ -115,9 +115,9 @@ class RDS_AIE_AI_Client
 	 */
 	private function get_image_endpoint($base_url)
 	{
-		// Если это OpenRouter, используем chat/completions
+		// Если это OpenRouter, используем images
 		if (strpos($base_url, 'openrouter.ai') !== false) {
-			return 'chat/completions';
+			return 'images';
 		}
 
 		// Для OpenAI и других совместимых API
@@ -480,7 +480,7 @@ class RDS_AIE_AI_Client
 	/**
 	 * Отправка запроса к API
 	 */
-	private function make_api_request($base_url, $api_key, $data, $endpoint = 'chat/completions')
+	private function make_api_request($base_url, $api_key, $data, $endpoint = 'images')
 	{
 		$url = trailingslashit($base_url) . $endpoint;
 
@@ -516,31 +516,31 @@ class RDS_AIE_AI_Client
 		$response_headers = wp_remote_retrieve_headers($response);
 
 		// Для отладки
-		if (defined('WP_DEBUG') && WP_DEBUG) {
-			// Логируем структуру ответа для image generation
-			if ($endpoint === 'chat/completions' && isset($decoded['choices'][0]['message'])) {
-				$message = $decoded['choices'][0]['message'];
-				$structure = [
-					'has_images' => isset($message['images']),
-					'has_content' => isset($message['content']),
-					'content_type' => isset($message['content']) ? gettype($message['content']) : 'none',
-					'message_keys' => array_keys($message)
-				];
-				error_log('RDS AI Engine Response Structure: ' . json_encode($structure));
+		// if (defined('WP_DEBUG') && WP_DEBUG) {
+		// 	// Логируем структуру ответа для image generation
+		// 	if ($endpoint === 'chat/completions' && isset($decoded['choices'][0]['message'])) {
+		// 		$message = $decoded['choices'][0]['message'];
+		// 		$structure = [
+		// 			'has_images' => isset($message['images']),
+		// 			'has_content' => isset($message['content']),
+		// 			'content_type' => isset($message['content']) ? gettype($message['content']) : 'none',
+		// 			'message_keys' => array_keys($message)
+		// 		];
+		// 		error_log('RDS AI Engine Response Structure: ' . json_encode($structure));
 
-				if (isset($message['images'])) {
-					error_log('RDS AI Engine Images count: ' . count($message['images']));
-					if (!empty($message['images'])) {
-						$first_image = $message['images'][0];
-						error_log('RDS AI Engine First image keys: ' . json_encode(array_keys($first_image)));
-						if (isset($first_image['image_url']['url'])) {
-							$url = $first_image['image_url']['url'];
-							error_log('RDS AI Engine Image URL type: ' . (strpos($url, 'data:') === 0 ? 'data URI' : 'regular URL'));
-						}
-					}
-				}
-			}
-		}
+		// 		if (isset($message['images'])) {
+		// 			error_log('RDS AI Engine Images count: ' . count($message['images']));
+		// 			if (!empty($message['images'])) {
+		// 				$first_image = $message['images'][0];
+		// 				error_log('RDS AI Engine First image keys: ' . json_encode(array_keys($first_image)));
+		// 				if (isset($first_image['image_url']['url'])) {
+		// 					$url = $first_image['image_url']['url'];
+		// 					error_log('RDS AI Engine Image URL type: ' . (strpos($url, 'data:') === 0 ? 'data URI' : 'regular URL'));
+		// 				}
+		// 			}
+		// 		}
+		// 	}
+		// }
 
 		// Проверяем, является ли ответ HTML
 		if (
@@ -664,18 +664,13 @@ class RDS_AIE_AI_Client
 		try {
 			// Определяем формат запроса в зависимости от провайдера
 			$is_openrouter = strpos($base_url, 'openrouter.ai') !== false;
-			$endpoint = $is_openrouter ? 'chat/completions' : 'images/generations';
+			// $endpoint = $is_openrouter ? 'chat/completions' : 'images/generations';
+			$endpoint = $is_openrouter ? 'images' : 'images/generations';
 
 			if ($is_openrouter) {
 				$test_data = [
 					'model' => $model_name,
-					'messages' => [
-						[
-							'role' => 'user',
-							'content' => 'test'
-						]
-					],
-					'modalities' => ['image']
+					'prompt' => 'test',
 				];
 			} else {
 				$test_data = [
@@ -886,7 +881,7 @@ class RDS_AIE_AI_Client
 		];
 
 		return [
-			'url' => trailingslashit($model['base_url']) . 'chat/completions',
+			'url' => trailingslashit($model['base_url']) . 'images',
 			'headers' => [
 				'Content-Type' => 'application/json',
 				'Authorization' => 'Bearer ' . substr($model['api_key'], 0, 10) . '...' // Безопасный показ ключа

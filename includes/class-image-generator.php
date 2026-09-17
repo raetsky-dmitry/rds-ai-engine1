@@ -123,13 +123,7 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 			// Формат запроса для OpenRouter
 			$request = [
 				'model' => $this->model->model_name,
-				'messages' => [
-					[
-						'role' => 'user',
-						'content' => $params['prompt']
-					]
-				],
-				'modalities' => ['image'],
+				'prompt' => $params['prompt'],
 				'seed' => (int)$params['seed']
 			];
 
@@ -141,9 +135,7 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 			// Добавляем aspect_ratio (только для OpenRouter)
 			$params['aspect_ratio'] = $this->convert_dimensions_to_aspect_ratio($params['width'], $params['height']);
 			if (!empty($params['aspect_ratio'])) {
-				$request['image_config'] = [
-					'aspect_ratio' => $params['aspect_ratio']
-				];
+				$request['aspect_ratio'] = $params['aspect_ratio'];
 			}
 		} else {
 			// Стандартный формат для OpenAI
@@ -258,69 +250,69 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 			$is_openrouter = true;
 		}
 
-		if ($is_openrouter) {
-			// Обработка ответа OpenRouter согласно полученному тестовому ответу
-			if (isset($response['choices'][0]['message'])) {
-				$message = $response['choices'][0]['message'];
+		// if ($is_openrouter) {
+		// 	// Обработка ответа OpenRouter согласно полученному тестовому ответу
+		// 	if (isset($response['data'])) {
+		// 		$message = $response['data'];
 
-				// Вариант 1: Поле images содержит массив изображений
-				if (isset($message['images']) && is_array($message['images'])) {
-					$images = [];
+		// 		// Вариант 1: Поле images содержит массив изображений
+		// 		if (isset($message['images']) && is_array($message['images'])) {
+		// 			$images = [];
 
-					foreach ($message['images'] as $image_data) {
-						if ($image_data['type'] === 'image_url' && isset($image_data['image_url']['url'])) {
-							$image_url = $image_data['image_url']['url'];
+		// 			foreach ($message['images'] as $image_data) {
+		// 				if ($image_data['type'] === 'image_url' && isset($image_data['image_url']['url'])) {
+		// 					$image_url = $image_data['image_url']['url'];
 
-							// Если это уже data URI (base64), возвращаем как есть
-							if (strpos($image_url, 'data:') === 0) {
-								$images[] = $image_url;
-							} else {
-								// Если это URL, конвертируем в base64
-								$images[] = $this->url_to_base64($image_url);
-							}
-						}
-					}
+		// 					// Если это уже data URI (base64), возвращаем как есть
+		// 					if (strpos($image_url, 'data:') === 0) {
+		// 						$images[] = $image_url;
+		// 					} else {
+		// 						// Если это URL, конвертируем в base64
+		// 						$images[] = $this->url_to_base64($image_url);
+		// 					}
+		// 				}
+		// 			}
 
-					if (!empty($images)) {
-						return $images;
-					}
-				}
+		// 			if (!empty($images)) {
+		// 				return $images;
+		// 			}
+		// 		}
 
-				// Вариант 2: Контент содержит изображения в массиве (старый формат)
-				if (isset($message['content']) && is_array($message['content'])) {
-					$images = [];
+		// 		// Вариант 2: Контент содержит изображения в массиве (старый формат)
+		// 		if (isset($message['content']) && is_array($message['content'])) {
+		// 			$images = [];
 
-					foreach ($message['content'] as $content_part) {
-						if ($content_part['type'] === 'image_url' && isset($content_part['image_url']['url'])) {
-							$image_url = $content_part['image_url']['url'];
+		// 			foreach ($message['content'] as $content_part) {
+		// 				if ($content_part['type'] === 'image_url' && isset($content_part['image_url']['url'])) {
+		// 					$image_url = $content_part['image_url']['url'];
 
-							if (strpos($image_url, 'data:') === 0) {
-								$images[] = $image_url;
-							} else {
-								$images[] = $this->url_to_base64($image_url);
-							}
-						}
-					}
+		// 					if (strpos($image_url, 'data:') === 0) {
+		// 						$images[] = $image_url;
+		// 					} else {
+		// 						$images[] = $this->url_to_base64($image_url);
+		// 					}
+		// 				}
+		// 			}
 
-					if (!empty($images)) {
-						return $images;
-					}
-				}
+		// 			if (!empty($images)) {
+		// 				return $images;
+		// 			}
+		// 		}
 
-				// Вариант 3: Контент как строка с URL изображения
-				if (isset($message['content']) && is_string($message['content'])) {
-					// Пытаемся найти URL изображения в тексте
-					if (preg_match('/https?:\/\/[^\s]+(?:\.(?:jpg|jpeg|png|gif|webp))[^\s]*/i', $message['content'], $matches)) {
-						return [$this->url_to_base64($matches[0])];
-					}
+		// 		// Вариант 3: Контент как строка с URL изображения
+		// 		if (isset($message['content']) && is_string($message['content'])) {
+		// 			// Пытаемся найти URL изображения в тексте
+		// 			if (preg_match('/https?:\/\/[^\s]+(?:\.(?:jpg|jpeg|png|gif|webp))[^\s]*/i', $message['content'], $matches)) {
+		// 				return [$this->url_to_base64($matches[0])];
+		// 			}
 
-					// Или ищем data URI
-					if (preg_match('/data:image\/[^;]+;base64,[^\s"]+/i', $message['content'], $matches)) {
-						return [$matches[0]];
-					}
-				}
-			}
-		} else {
+		// 			// Или ищем data URI
+		// 			if (preg_match('/data:image\/[^;]+;base64,[^\s"]+/i', $message['content'], $matches)) {
+		// 				return [$matches[0]];
+		// 			}
+		// 		}
+		// 	}
+		// } else {
 			// Стандартная обработка для OpenAI
 			if (isset($response['data'])) {
 				$images = [];
@@ -331,7 +323,11 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 						$images[] = $this->url_to_base64($image_data['url']);
 					} elseif (isset($image_data['b64_json'])) {
 						// Уже base64
-						$image_type = $this->get_image_type($response, $image_data);
+						if (isset( $image_data['media_type'])) {
+							$image_type = $image_data['media_type'];
+						} else { 
+							$image_type = $this->get_image_type($response, $image_data);
+						}
 						$images[] = 'data:' . $image_type . ';base64,' . $image_data['b64_json'];
 					}
 				}
@@ -340,43 +336,43 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 					return $images;
 				}
 			}
-		}
+		// }
 
 		// Если ничего не найдено, проверяем ошибки
 		if (isset($response['error']['message'])) {
 			throw new Exception($response['error']['message']);
 		}
 
-		// Дополнительная отладочная информация
-		$debug_info = [
-			'response_keys' => array_keys($response),
-			'has_choices' => isset($response['choices']),
-			'choices_count' => isset($response['choices']) ? count($response['choices']) : 0,
-			'first_choice_keys' => isset($response['choices'][0]) ? array_keys($response['choices'][0]) : null,
-			'first_message_keys' => isset($response['choices'][0]['message']) ? array_keys($response['choices'][0]['message']) : null,
-			'has_images' => isset($response['choices'][0]['message']['images']),
-			'images_count' => isset($response['choices'][0]['message']['images']) ? count($response['choices'][0]['message']['images']) : 0,
-		];
+		// // Дополнительная отладочная информация
+		// $debug_info = [
+		// 	'response_keys' => array_keys($response),
+		// 	'has_choices' => isset($response['choices']),
+		// 	'choices_count' => isset($response['choices']) ? count($response['choices']) : 0,
+		// 	'first_choice_keys' => isset($response['choices'][0]) ? array_keys($response['choices'][0]) : null,
+		// 	'first_message_keys' => isset($response['choices'][0]['message']) ? array_keys($response['choices'][0]['message']) : null,
+		// 	'has_images' => isset($response['choices'][0]['message']['images']),
+		// 	'images_count' => isset($response['choices'][0]['message']['images']) ? count($response['choices'][0]['message']['images']) : 0,
+		// ];
 
-		if (defined('WP_DEBUG') && WP_DEBUG) {
-			error_log('RDS AI Engine Debug Info: ' . json_encode($debug_info));
+		// if (defined('WP_DEBUG') && WP_DEBUG) {
+		// 	error_log('RDS AI Engine Debug Info: ' . json_encode($debug_info));
 
-			// Логируем структуру сообщения если есть
-			if (isset($response['choices'][0]['message'])) {
-				$message_structure = [];
-				foreach ($response['choices'][0]['message'] as $key => $value) {
-					if (is_array($value)) {
-						$message_structure[$key] = ['type' => 'array', 'count' => count($value)];
-						if ($key === 'images' && !empty($value)) {
-							$message_structure[$key]['first_item'] = array_keys($value[0]);
-						}
-					} else {
-						$message_structure[$key] = ['type' => gettype($value), 'preview' => substr((string)$value, 0, 100)];
-					}
-				}
-				error_log('RDS AI Engine Message Structure: ' . json_encode($message_structure));
-			}
-		}
+		// 	// Логируем структуру сообщения если есть
+		// 	if (isset($response['choices'][0]['message'])) {
+		// 		$message_structure = [];
+		// 		foreach ($response['choices'][0]['message'] as $key => $value) {
+		// 			if (is_array($value)) {
+		// 				$message_structure[$key] = ['type' => 'array', 'count' => count($value)];
+		// 				if ($key === 'images' && !empty($value)) {
+		// 					$message_structure[$key]['first_item'] = array_keys($value[0]);
+		// 				}
+		// 			} else {
+		// 				$message_structure[$key] = ['type' => gettype($value), 'preview' => substr((string)$value, 0, 100)];
+		// 			}
+		// 		}
+		// 		error_log('RDS AI Engine Message Structure: ' . json_encode($message_structure));
+		// 	}
+		// }
 
 		throw new Exception(
 			__('Image not found in API response. ', 'rds-ai-engine') .

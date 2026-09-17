@@ -230,6 +230,21 @@ class RDS_AIE_Agent_Engine {
 		return $final_response;
 	}
 
+	// /**
+	//  * Установить безопасные лимиты времени для длительных операций агента.
+	//  * Вызывать ТОЛЬКО внутри обработчика запроса, перед запуском run().
+	//  */
+	// public static function set_safe_limits() {
+	// 	// Увеличиваем лимит выполнения скрипта
+	// 	@set_time_limit(300);
+		
+	// 	// Увеличиваем таймаут сокетов для wp_remote_post/get
+	// 	@ini_set('default_socket_timeout', 300);
+		
+	// 	// Увеличиваем лимит памяти (агенты с инструментами потребляют много)
+	// 	@ini_set('memory_limit', '512M');
+	// }
+	
 	private function call_llm($model, $messages, $tools, $temperature) {
 		$url = trailingslashit($model->base_url) . 'chat/completions';
 		
@@ -245,7 +260,7 @@ class RDS_AIE_Agent_Engine {
 		}
 
 		$args = [
-			'timeout' => 60,
+			'timeout' => 300,
 			'headers' => [
 				'Content-Type' => 'application/json',
 				'Authorization' => 'Bearer ' . $model->api_key
