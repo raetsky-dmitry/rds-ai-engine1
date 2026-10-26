@@ -88,6 +88,11 @@ class RDS_AIE_Main
 			add_action('wp_ajax_rds_aie_test_image_generation', [$this, 'ajax_test_image_generation']); // Новый обработчик
 		}
 
+		// Подключаем долгосрочную память
+		$memory_cpt = new RDS_AIE_Memory_CPT();
+		$memory_cpt->init();
+
+
 		// Крон для очистки старой истории
 		add_action('rds_aie_daily_cleanup', [$this, 'daily_cleanup']);
 		add_action('init', [$this, 'schedule_cleanup']);
@@ -232,8 +237,18 @@ class RDS_AIE_Main
 			require_once RDS_AIE_PLUGIN_DIR . 'includes/class-agent-engine.php';
 		}
 
+		// Инициализация долгосрочной памяти
+		require_once RDS_AIE_PLUGIN_DIR . 'includes/class-memory-cpt.php';
+
 		$this->agent_manager = new RDS_AIE_Agent_Manager($this->db);
 		$this->agent_engine = new RDS_AIE_Agent_Engine($this->db);
+
+		// Инициализации кнопки векторной индексации постов
+		if (!class_exists('RDS_AIE_Post_Indexer_UI')) {
+			require_once RDS_AIE_PLUGIN_DIR . 'includes/class-post-indexer-ui.php';
+		}
+		$indexer_ui = new RDS_AIE_Post_Indexer_UI();
+		$indexer_ui->init();		
 	}
 
 	public function get_agent_manager() {

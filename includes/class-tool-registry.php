@@ -25,26 +25,125 @@ class RDS_AIE_Tool_Registry {
 	 * Регистрация базовых инструментов WP
 	 */
 	private function register_wp_basics() {
-		// Инструмент поиска постов
+		// // Инструмент поиска постов
+		// $this->tools['wp_search_posts'] = [
+		// 	'name' => 'wp_search_posts',
+		// 	'description' => 'Search for WordPress posts or pages by title or content.',
+		// 	'schema' => [
+		// 		'type' => 'object',
+		// 		'properties' => [
+		// 			'search_term' => [
+		// 				'type' => 'string',
+		// 				'description' => 'The term to search for.'
+		// 			],
+		// 			'post_type' => [
+		// 				'type' => 'string',
+		// 				'default' => 'post',
+		// 				'description' => 'Type of post to search (post, page, etc.).'
+		// 			]
+		// 		],
+		// 		'required' => ['search_term']
+		// 	],
+		// 	'callback' => [$this, 'tool_search_posts']
+		// ];
+
+    // Инструмент индексации поста для векторного поиска
+    $this->tools['index_post_for_search'] = [
+        'name' => 'index_post_for_search',
+        'description' => 'Generate a summary and vector embedding for a specific post to make it searchable by meaning. Use this after creating or significantly updating important documents.',
+        'schema' => [
+            'type' => 'object',
+            'properties' => [
+                'post_id' => [
+                    'type' => 'integer',
+                    'description' => 'The ID of the post to index.'
+                ]
+            ],
+            'required' => ['post_id']
+        ],
+        'callback' => [$this, 'tool_index_post']
+    ];
+
+    // Инструмент поиска постов (обновленная схема)
 		$this->tools['wp_search_posts'] = [
 			'name' => 'wp_search_posts',
-			'description' => 'Search for WordPress posts or pages by title or content.',
+			'description' => 'Hybrid search for WordPress posts. Uses semantic search for natural language queries and keyword search for exact matches. Provide both for best results.',
 			'schema' => [
 				'type' => 'object',
 				'properties' => [
 					'search_term' => [
 						'type' => 'string',
-						'description' => 'The term to search for.'
+						'description' => 'Natural language query or phrase for semantic (vector) search. Example: "How to improve customer retention strategies".'
+					],
+					'keywords' => [
+						'type' => 'array',
+						'description' => 'Array of specific keywords or terms for exact keyword search. Example: ["email marketing", "retention", "CRM"].',
+						'items' => ['type' => 'string']
 					],
 					'post_type' => [
 						'type' => 'string',
 						'default' => 'post',
-						'description' => 'Type of post to search (post, page, etc.).'
+						'description' => 'Type of post to search (post, page, rds_aie_memory, etc.).'
+					],
+					'limit' => [
+						'type' => 'integer',
+						'default' => 5,
+						'description' => 'Maximum number of results to return from each search method.'
 					]
 				],
-				'required' => ['search_term']
+				'required' => ['search_term', 'keywords'] 
 			],
 			'callback' => [$this, 'tool_search_posts']
+		];
+		
+
+		// Инструмент получения списка категорий
+		$this->tools['wp_list_categories'] = [
+			'name' => 'wp_list_categories',
+			'description' => 'Get a list of available categories for a specific post type. Use this to find the correct category ID before creating or updating a post.',
+			'schema' => [
+				'type' => 'object',
+				'properties' => [
+					'post_type' => [
+						'type' => 'string',
+						'description' => 'The post type to get categories for (e.g., "post", "rds_aie_memory"). Default: "post".',
+						'default' => 'post'
+					]
+				],
+				'required' => []
+			],
+			'callback' => [$this, 'tool_list_categories']
+		];
+
+		// Инструмент создания категории
+		$this->tools['wp_create_category'] = [
+			'name' => 'wp_create_category',
+			'description' => 'Create a new category for posts or documents. Specify post_type to choose where the category belongs.',
+			'schema' => [
+				'type' => 'object',
+				'properties' => [
+					'name' => [
+						'type' => 'string',
+						'description' => 'The name of the category.'
+					],
+					'description' => [
+						'type' => 'string',
+						'description' => 'Optional description of the category.'
+					],
+					'parent_id' => [
+						'type' => 'integer',
+						'description' => 'Optional parent category ID for hierarchical structure.'
+					],
+					'post_type' => [
+						'type' => 'string',
+						'description' => 'The post type this category is for. Use "post" for blog articles or "rds_aie_memory" for AI Documents. Default: "post".',
+						'enum' => ['post', 'rds_aie_memory'],
+						'default' => 'post'
+					]
+				],
+				'required' => ['name']
+			],
+			'callback' => [$this, 'tool_create_category']
 		];
 
 		// Инструмент чтения поста (расширенный для маркетинга/анализа)
@@ -65,6 +164,10 @@ class RDS_AIE_Tool_Registry {
 					'include_meta' => [
 						'type' => 'boolean',
 						'description' => 'Include SEO meta fields (title, description, permalink). Default: false.'
+					],
+					'include_categories' => [ 
+						'type' => 'boolean',
+						'description' => 'Include assigned categories/terms for this post. Default: false.'
 					]
 				],
 				'required' => ['post_id']
@@ -81,42 +184,55 @@ class RDS_AIE_Tool_Registry {
                 'properties' => [
                     'title' => ['type' => 'string', 'description' => 'The title of the post.'],
                     'content' => ['type' => 'string', 'description' => 'The full HTML or Markdown content.'],
-                    'post_type' => ['type' => 'string', 'description' => 'Post type (default: "post").', 'enum' => ['post', 'page']]
+                    'post_type' => ['type' => 'string', 'description' => 'Post type (default: "post").', 
+						'enum' => ['post', 'page', 'rds_aie_memory']],
+						'category_ids' => [
+							'type' => 'array',
+							'description' => 'Array of category IDs to assign to the post.',
+							'items' => ['type' => 'integer']
+						]
                 ],
                 'required' => ['title', 'content']
             ],
             'callback' => [__CLASS__, 'create_draft_post']
         ];
 
-		// Инструмент обновления поста (безопасное редактирование через черновики)
-		$this->tools['wp_update_post'] = [
-			'name' => 'wp_update_post',
-			'description' => 'Update an existing WordPress post. ALWAYS sets status to "draft" for safety, even if the post was published. Use this to edit content, titles, or SEO metadata. Never use this to publish posts directly.',
-			'schema' => [
-				'type' => 'object',
-				'properties' => [
-					'post_id' => [
-						'type' => 'integer',
-						'description' => 'The ID of the post to update.'
-					],
-					'title' => [
-						'type' => 'string',
-						'description' => 'New title for the post. Optional.'
-					],
-					'content' => [
-						'type' => 'string',
-						'description' => 'New content for the post. Supports HTML. Optional.'
-					],
-					'excerpt' => [
-						'type' => 'string',
-						'description' => 'New excerpt/summary for the post. Optional.'
-					]
-				],
-				'required' => ['post_id']
-			],
-			'callback' => [$this, 'tool_update_post']
-		];
-
+        // Инструмент обновления поста (безопасное редактирование через черновики)
+        $this->tools['wp_update_post'] = [
+            'name' => 'wp_update_post',
+            'description' => 'Update an existing WordPress post. ALWAYS sets status to "draft" for safety, even if the post was published. Use this to edit content, titles, excerpts, or assign categories. Never use this to publish posts directly.',
+            'schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'post_id' => [
+                        'type' => 'integer',
+                        'description' => 'The ID of the post to update.'
+                    ],
+                    'title' => [
+                        'type' => 'string',
+                        'description' => 'New title for the post. Optional.'
+                    ],
+                    'content' => [
+                        'type' => 'string',
+                        'description' => 'New content for the post. Supports HTML. Optional.'
+                    ],
+                    'excerpt' => [
+                        'type' => 'string',
+                        'description' => 'New excerpt/summary for the post. Optional.'
+                    ],
+                    'category_ids' => [
+                        'type' => 'array',
+                        'description' => 'Array of category IDs to assign to the post. Replaces existing categories. Optional.',
+                        'items' => [
+                            'type' => 'integer'
+                        ]
+                    ]
+                ],
+                'required' => ['post_id']
+            ],
+            'callback' => [$this, 'tool_update_post']
+        ];
+		
 		// Инструмент веб-поиска через Parallel.ai (v1 Search API)
 		$this->tools['web_search'] = [
 			'name' => 'web_search',
@@ -260,38 +376,161 @@ class RDS_AIE_Tool_Registry {
 
 	// --- Callbacks для базовых инструментов ---
 
+	// /**
+	//  * Tool: Search WordPress Post
+	//  */
+	// public function tool_search_posts($args) {
+	// 	$search_term = isset($args['search_term']) ? sanitize_text_field($args['search_term']) : '';
+	// 	$post_type = isset($args['post_type']) ? sanitize_text_field($args['post_type']) : 'post';
+
+	// 	$query = new WP_Query([
+	// 		's' => $search_term,
+	// 		'post_type' => $post_type,
+	// 		'posts_per_page' => 5,
+	// 		'fields' => 'ids' // Получаем только ID для экономии памяти
+	// 	]);
+
+	// 	$results = [];
+	// 	if ($query->have_posts()) {
+	// 		foreach ($query->posts as $post_id) {
+	// 			$results[] = [
+	// 				'id' => $post_id,
+	// 				'title' => get_the_title($post_id),
+	// 				'excerpt' => wp_trim_words(get_the_excerpt($post_id), 20)
+	// 			];
+	// 		}
+	// 	}
+	// 	wp_reset_postdata();
+	// 	return $results;
+	// }
+
+    /**
+     * Tool: Index Post for Vector Search
+     */
+    public function tool_index_post($args) {
+        $post_id = intval($args['post_id'] ?? 0);
+        if (!$post_id) {
+            return ['error' => 'Valid post_id is required.'];
+        }
+
+        try {
+            $main = RDS_AIE_Main::get_instance();
+            $rag_engine = $main->get_rag_engine();
+            
+            // Используем метод из RAG Engine, который мы добавили ранее
+            $success = $rag_engine->index_post($post_id);
+            
+            if ($success) {
+                return [
+                    'success' => true,
+                    'message' => sprintf('Post #%d successfully indexed for vector search.', $post_id)
+                ];
+            } else {
+                return ['error' => 'Failed to generate embedding or save to database.'];
+            }
+        } catch (Exception $e) {
+            return ['error' => 'Indexing failed: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Tool: Hybrid Search Posts (Vector + Keyword)
+     */
 	public function tool_search_posts($args) {
 		$search_term = isset($args['search_term']) ? sanitize_text_field($args['search_term']) : '';
-		$post_type = isset($args['post_type']) ? sanitize_text_field($args['post_type']) : 'post';
+		$keywords = isset($args['keywords']) && is_array($args['keywords']) 
+					? array_map('sanitize_text_field', $args['keywords']) 
+					: [];
+		$post_type = isset($args['post_type']) ? sanitize_key($args['post_type']) : 'post';
+		$limit = isset($args['limit']) ? intval($args['limit']) : 5;
 
-		$query = new WP_Query([
-			's' => $search_term,
-			'post_type' => $post_type,
-			'posts_per_page' => 5,
-			'fields' => 'ids' // Получаем только ID для экономии памяти
-		]);
+		if (empty($search_term) && empty($keywords)) {
+			return ['error' => 'Either search_term or keywords are required.'];
+		}
 
-		$results = [];
-		if ($query->have_posts()) {
-			foreach ($query->posts as $post_id) {
-				$results[] = [
-					'id' => $post_id,
-					'title' => get_the_title($post_id),
-					'excerpt' => wp_trim_words(get_the_excerpt($post_id), 20)
+		$vector_results = [];
+		$keyword_ids = [];
+
+		// 1. Векторный поиск (по search_term)
+		if (!empty($search_term)) {
+			try {
+				$main = RDS_AIE_Main::get_instance();
+				$rag_engine = $main->get_rag_engine();
+				// Порог 0.4 для фильтрации шума
+				$vector_results = $rag_engine->vector_search_posts($search_term, $post_type, $limit, 0.4);
+			} catch (Exception $e) {
+				error_log('[RDS AI Engine] Vector search error: ' . $e->getMessage());
+			}
+		}
+
+		// Собираем ID из векторного поиска
+		$seen_ids = [];
+		foreach ($vector_results as $item) {
+			$seen_ids[] = $item['post_id'];
+		}
+
+		// 2. Поиск по ключевым словам (цикл по массиву)
+		if (!empty($keywords)) {
+			foreach ($keywords as $kw) {
+				if (empty($kw)) continue;
+				
+				$kw_query = new WP_Query([
+					's' => $kw,
+					'post_type' => $post_type,
+					'posts_per_page' => $limit,
+					'fields' => 'ids'
+				]);
+
+				if ($kw_query->have_posts()) {
+					foreach ($kw_query->posts as $pid) {
+						if (!in_array($pid, $keyword_ids)) {
+							$keyword_ids[] = $pid;
+						}
+					}
+				}
+				wp_reset_postdata();
+			}
+		}
+
+		// 3. Слияние результатов
+		// Сначала берем векторные результаты (они более "умные")
+		$final_output = [];
+		
+		foreach ($vector_results as $res) {
+			$post = get_post($res['post_id']);
+			if ($post) {
+				$final_output[] = [
+					'id' => $post->ID,
+					'title' => $post->post_title,
+					'excerpt' => wp_trim_words($post->post_content, 30),
+					'relevance_score' => round($res['score'], 4),
+					'match_type' => 'semantic'
 				];
 			}
 		}
-		wp_reset_postdata();
-		return $results;
+
+		// Затем добавляем ключевые, которых еще нет в списке
+		foreach ($keyword_ids as $pid) {
+			if (!in_array($pid, $seen_ids)) {
+				$post = get_post($pid);
+				if ($post) {
+					$final_output[] = [
+						'id' => $post->ID,
+						'title' => $post->post_title,
+						'excerpt' => wp_trim_words($post->post_content, 30),
+						'relevance_score' => 'keyword_match',
+						'match_type' => 'keyword'
+					];
+					$seen_ids[] = $pid;
+				}
+			}
+		}
+
+		return $final_output;
 	}
 
 	/**
 	 * Tool: Get WordPress Post Content
-	 * @param array $args {
-	 *     @type int    $post_id      Required. Post ID.
-	 *     @type bool   $include_html Optional. Return raw HTML instead of stripped text. Default false.
-	 *     @type bool   $include_meta Optional. Include SEO meta fields. Default false.
-	 * }
 	 */
 	public function tool_get_post($args) {
 		$post_id = intval($args['post_id'] ?? 0);
@@ -306,6 +545,7 @@ class RDS_AIE_Tool_Registry {
 
 		$include_html = !empty($args['include_html']);
 		$include_meta = !empty($args['include_meta']);
+		$include_categories = !empty($args['include_categories']); // <-- Получаем флаг
 
 		$result = [
 			'id'      => $post->ID,
@@ -316,100 +556,229 @@ class RDS_AIE_Tool_Registry {
 			'author'  => get_the_author_meta('display_name', $post->post_author),
 		];
 
-		// Контент: либо сырой HTML, либо очищенный текст
+		// Контент
 		if ($include_html) {
 			$result['content'] = $post->post_content;
 		} else {
-			// Базовая очистка для экономии токенов при обычном использовании
 			$result['content'] = wp_strip_all_tags($post->post_content);
 		}
 
-		// Мета-данные для SEO/маркетинга
+		// Мета-данные для SEO
 		if ($include_meta) {
 			$result['meta'] = [
 				'seo_title'       => get_post_meta($post->ID, '_yoast_wpseo_title', true) 
-				                     ?: get_post_meta($post->ID, '_rank_math_title', true) 
-				                     ?: '',
+									?: get_post_meta($post->ID, '_rank_math_title', true) 
+									?: '',
 				'seo_description' => get_post_meta($post->ID, '_yoast_wpseo_metadesc', true) 
-				                     ?: get_post_meta($post->ID, '_rank_math_description', true) 
-				                     ?: '',
+									?: get_post_meta($post->ID, '_rank_math_description', true) 
+									?: '',
 				'permalink'       => get_permalink($post->ID),
+			];
+		}
+
+		// Категории / Термины таксономии
+		if ($include_categories) {
+			// Определяем таксономию в зависимости от типа поста
+			$taxonomy = 'category';
+			if ($post->post_type === 'rds_aie_memory') {
+				$taxonomy = 'memory_category';
+			}
+
+			$terms = get_the_terms($post->ID, $taxonomy);
+			
+			if (!is_wp_error($terms) && !empty($terms)) {
+				$result['categories'] = array_map(function($term) {
+					return [
+						'id'   => $term->term_id,
+						'name' => $term->name,
+						'slug' => $term->slug
+					];
+				}, $terms);
+			} else {
+				$result['categories'] = [];
+			}
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Tool: List Categories
+	 */
+	public function tool_list_categories($args) {
+		$post_type = isset($args['post_type']) ? sanitize_key($args['post_type']) : 'post';
+		
+		// Определяем таксономию в зависимости от типа поста
+		$taxonomy = 'category';
+		if ($post_type === 'rds_aie_memory') {
+			$taxonomy = 'memory_category';
+		}
+
+		$categories = get_terms([
+			'taxonomy' => $taxonomy,
+			'hide_empty' => false,
+			'orderby'    => 'name',
+			'order'      => 'ASC'
+		]);
+
+		if (is_wp_error($categories) || empty($categories)) {
+			return ['status' => 'empty', 'message' => 'No categories found for this post type.'];
+		}
+
+		$result = [];
+		foreach ($categories as $cat) {
+			$result[] = [
+				'id'          => $cat->term_id,
+				'name'        => $cat->name,
+				'description' => $cat->description,
+				'parent'      => $cat->parent
 			];
 		}
 
 		return $result;
 	}
 
-
 	/**
-	 * Tool: Update WordPress Post (Safe Draft Mode)
-	 * Always saves as draft to prevent accidental publishing.
+	 * Tool: Create Category
 	 */
-	public function tool_update_post($args) {
-		$post_id = intval($args['post_id'] ?? 0);
-		if (!$post_id) {
-			return ['error' => 'Valid post_id is required.'];
+	public function tool_create_category($args) {
+		$name = isset($args['name']) ? sanitize_text_field($args['name']) : '';
+		if (empty($name)) {
+			return ['error' => 'Category name is required.'];
 		}
 
-		// Проверяем существование поста
-		$post = get_post($post_id);
-		if (!$post) {
-			return ['error' => 'Post not found with ID: ' . $post_id];
-		}
+		$description = isset($args['description']) ? sanitize_textarea_field($args['description']) : '';
+		$parent_id = isset($args['parent_id']) ? intval($args['parent_id']) : 0;
+		
+		// Определяем таксономию на основе типа записи
+		$post_type = isset($args['post_type']) ? sanitize_key($args['post_type']) : 'post';
+		$taxonomy = ($post_type === 'rds_aie_memory') ? 'memory_category' : 'category';
 
-		// Собираем данные для обновления
-		$update_data = [
-			'ID'          => $post_id,
-			'post_status' => 'draft', // КРИТИЧЕСКИ ВАЖНО: всегда сохраняем как черновик
-		];
+		$result = wp_insert_term($name, $taxonomy, [
+			'description' => $description,
+			'parent'      => $parent_id
+		]);
 
-		if (!empty($args['title'])) {
-			$update_data['post_title'] = sanitize_text_field($args['title']);
-		}
-
-		if (!empty($args['content'])) {
-			$update_data['post_content'] = wp_kses_post($args['content']);
-		}
-
-		if (!empty($args['excerpt'])) {
-			$update_data['post_excerpt'] = sanitize_textarea_field($args['excerpt']);
-		}
-
-		try {
-			$result = wp_update_post($update_data, true); // true = возвращает WP_Error
-
-			if (is_wp_error($result)) {
-				error_log('[RDS AI Engine] wp_update_post failed: ' . $result->get_error_message());
-				return ['error' => 'Failed to update post: ' . $result->get_error_message()];
+		if (is_wp_error($result)) {
+			// Если категория уже существует, вернем её ID
+			if ($existing = get_term_by('name', $name, $taxonomy)) {
+				return [
+					'success' => true,
+					'category_id' => $existing->term_id,
+					'message' => 'Category already exists.',
+					'name' => $existing->name,
+					'taxonomy' => $taxonomy
+				];
 			}
-
-			return [
-				'success'  => true,
-				'post_id'  => $post_id,
-				'edit_url' => get_edit_post_link($post_id, 'raw'),
-				'message'  => sprintf(
-					'Post #%d updated and saved as DRAFT. Review here: %s',
-					$post_id,
-					get_edit_post_link($post_id, 'raw')
-				)
-			];
-
-		} catch (Exception $e) {
-			error_log('[RDS AI Engine] Unexpected error updating post: ' . $e->getMessage());
-			return ['error' => 'Unexpected error: ' . $e->getMessage()];
+			return ['error' => 'Failed to create category: ' . $result->get_error_message()];
 		}
+
+		return [
+			'success'     => true,
+			'category_id' => $result['term_id'],
+			'message'     => sprintf('Category "%s" created in "%s" with ID %d.', $name, $post_type, $result['term_id']),
+			'taxonomy'    => $taxonomy
+		];
 	}
 
     /**
-	 * Tool: Create WordPress Post (Safe Draft Mode)
-	 */
-	public static function create_draft_post($args) {
+     * Tool: Update WordPress Post (Safe Draft Mode)
+     * Always saves as draft to prevent accidental publishing.
+     */
+    public function tool_update_post($args) {
+        $post_id = intval($args['post_id'] ?? 0);
+        if (!$post_id) {
+            return ['error' => 'Valid post_id is required.'];
+        }
+
+        // Проверяем существование поста
+        $post = get_post($post_id);
+        if (!$post) {
+            return ['error' => 'Post not found with ID: ' . $post_id];
+        }
+
+        // Собираем данные для обновления
+        $update_data = [
+            'ID'          => $post_id,
+            'post_status' => 'draft', // КРИТИЧЕСКИ ВАЖНО: всегда сохраняем как черновик
+        ];
+
+        if (!empty($args['title'])) {
+            $update_data['post_title'] = sanitize_text_field($args['title']);
+        }
+
+        if (!empty($args['content'])) {
+            $update_data['post_content'] = wp_kses_post($args['content']);
+        }
+
+        if (!empty($args['excerpt'])) {
+            $update_data['post_excerpt'] = sanitize_textarea_field($args['excerpt']);
+        }
+
+        try {
+            $result = wp_update_post($update_data, true); // true = возвращает WP_Error
+
+            if (is_wp_error($result)) {
+                error_log('[RDS AI Engine] wp_update_post failed: ' . $result->get_error_message());
+                return ['error' => 'Failed to update post: ' . $result->get_error_message()];
+            }
+
+            // Добавляем категории/термины, если указаны
+            if (isset($args['category_ids']) && is_array($args['category_ids'])) {
+                $cat_ids = array_map('intval', $args['category_ids']);
+                
+                // Определяем таксономию в зависимости от типа поста
+                $taxonomy = 'category'; // По умолчанию для постов
+                if ($post->post_type === 'rds_aie_memory') {
+                    $taxonomy = 'memory_category';
+                }
+
+                // Используем wp_set_object_terms для работы с любой таксономией
+                wp_set_object_terms($post_id, $cat_ids, $taxonomy);
+                
+                // Очищаем кеш терминов, чтобы изменения сразу отобразились в админке
+                clean_object_term_cache($post_id, $taxonomy);
+            }
+
+            return [
+                'success'  => true,
+                'post_id'  => $post_id,
+                'edit_url' => get_edit_post_link($post_id, 'raw'),
+                'message'  => sprintf(
+                    'Post #%d updated and saved as DRAFT. Review here: %s',
+                    $post_id,
+                    get_edit_post_link($post_id, 'raw')
+                )
+            ];
+
+        } catch (Exception $e) {
+            error_log('[RDS AI Engine] Unexpected error updating post: ' . $e->getMessage());
+            return ['error' => 'Unexpected error: ' . $e->getMessage()];
+        }
+    }
+	
+    /**
+     * Tool: Create WordPress Post (Safe Draft Mode)
+     */
+    public static function create_draft_post($args) {
         if (empty($args['title']) || empty($args['content'])) {
             return ['error' => 'Both "title" and "content" are required.'];
         }
 
-        $post_type = isset($args['post_type']) && in_array($args['post_type'], ['post', 'page']) 
-                     ? $args['post_type'] : 'post';
+        // Список разрешенных типов записей
+        $allowed_types = ['post', 'page', 'rds_aie_memory'];
+        
+        // Проверяем тип записи
+        $post_type = isset($args['post_type']) ? sanitize_text_field($args['post_type']) : 'post';
+        
+        if (!in_array($post_type, $allowed_types)) {
+            return [
+                'error' => sprintf('Invalid post type "%s". Allowed types: %s.', 
+                    esc_html($post_type), 
+                    implode(', ', $allowed_types)
+                )
+            ];
+        }
 
         try {
             $post_id = wp_insert_post([
@@ -424,13 +793,31 @@ class RDS_AIE_Tool_Registry {
                 return ['error' => 'Failed to create draft: ' . $post_id->get_error_message()];
             }
 
+            // Привязка категорий/терминов
+            if (!empty($args['category_ids']) && is_array($args['category_ids'])) {
+                $cat_ids = array_map('intval', $args['category_ids']);
+                
+                // Определяем таксономию в зависимости от типа поста
+                $taxonomy = 'category'; // По умолчанию для постов
+                if ($post_type === 'rds_aie_memory') {
+                    $taxonomy = 'memory_category';
+                }
+
+                // Используем wp_set_object_terms для работы с любой таксономией
+                wp_set_object_terms($post_id, $cat_ids, $taxonomy);
+                
+                // Очищаем кеш терминов
+                clean_object_term_cache($post_id, $taxonomy);
+            }
+            
             return [
                 'success'  => true,
                 'post_id'  => $post_id,
                 'edit_url' => get_edit_post_link($post_id, 'raw'),
                 'message'  => sprintf(
-                    'Draft "%s" created! Review here: %s',
+                    'Draft "%s" created in "%s"! Review here: %s',
                     sanitize_text_field($args['title']),
+                    $post_type,
                     get_edit_post_link($post_id, 'raw')
                 )
             ];
@@ -438,7 +825,6 @@ class RDS_AIE_Tool_Registry {
             return ['error' => 'Unexpected error: ' . $e->getMessage()];
         }
     }
-	
 
 	/**
 	 * Tool: Web Search via Parallel.ai API

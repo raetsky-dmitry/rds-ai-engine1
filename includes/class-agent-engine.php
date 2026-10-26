@@ -364,7 +364,23 @@ class RDS_AIE_Agent_Engine {
 		
 		// 1. Добавляем основной системный промпт агента
 		// 1.1. Основной системный промпт
-		$system_prompt = $agent->system_prompt ?? '';
+		// --- ФОРМИРОВАНИЕ КОНТЕКСТНОГО БЛОКА ---
+		$context_info = "\n\n## System Context & Instructions\n";
+		
+		// 1. Информация о сайте
+		$context_info .= "- **Website Name**: " . get_bloginfo('name') . "\n";
+		$context_info .= "- **Website Description**: " . get_bloginfo('description') . "\n";
+		
+		// 2. Текущая дата
+		$context_info .= "- **Current Date**: " . date_i18n('Y-m-d (l)') . "\n";
+		
+		// 3. Инструкция по работе с долгосрочной памятью (Documents)
+		$context_info .= "- \n\n## Long-Term Memory\n You have access to a special post type called 'rds_aie_memory' (Documents). \n";
+		$context_info .= "  - Use standard WordPress tools (wp_search_posts, wp_get_post, etc.) with parameter `post_type='rds_aie_memory'` to store and retrieve long-term information like analysis results, competitor data, or project notes.\n";
+		$context_info .= "  - These documents are categorized using standard WordPress categories. Use them to organize memory.\n";
+		
+		// Объединяем основной промпт агента с контекстом
+		$system_prompt = ($agent->system_prompt ?? '') . $context_info;
 
 		// 1.2. Добавляем информацию о доступных навыках
 		$agent_skills = $this->db->get_agent_skills($agent->id);

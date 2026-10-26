@@ -343,16 +343,13 @@ class RDS_AIE_Image_Generator extends RDS_AIE_Generator_Base
 			throw new Exception($response['error']['message']);
 		}
 
-		// // Дополнительная отладочная информация
-		// $debug_info = [
-		// 	'response_keys' => array_keys($response),
-		// 	'has_choices' => isset($response['choices']),
-		// 	'choices_count' => isset($response['choices']) ? count($response['choices']) : 0,
-		// 	'first_choice_keys' => isset($response['choices'][0]) ? array_keys($response['choices'][0]) : null,
-		// 	'first_message_keys' => isset($response['choices'][0]['message']) ? array_keys($response['choices'][0]['message']) : null,
-		// 	'has_images' => isset($response['choices'][0]['message']['images']),
-		// 	'images_count' => isset($response['choices'][0]['message']['images']) ? count($response['choices'][0]['message']['images']) : 0,
-		// ];
+		// Дополнительная отладочная информация
+		$debug_info = [
+			'response_keys' => array_keys($response),
+			'has_usage' => isset($response['usage']),
+			'has_images' => isset($response['data']),
+			'images_count' => isset($response['data']) ? count($response['data']) : 0,
+		];
 
 		// if (defined('WP_DEBUG') && WP_DEBUG) {
 		// 	error_log('RDS AI Engine Debug Info: ' . json_encode($debug_info));

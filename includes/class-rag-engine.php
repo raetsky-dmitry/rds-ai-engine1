@@ -225,7 +225,7 @@ class RDS_AIE_RAG_Engine {
 		return array_slice($scores, 0, $search_limit);
 	}
 
-	private function cosine_similarity($vec1, $vec2) {
+	public function cosine_similarity($vec1, $vec2) {
 		$dot_product = 0;
 		$norm1 = 0;
 		$norm2 = 0;
@@ -246,4 +246,141 @@ class RDS_AIE_RAG_Engine {
 	public function add_chunks_from_external($text, $source_name, $title = '') {
 		return $this->index_text($text, $source_name, $title);
 	}
+
+	// ========= Работа с постами ==============
+
+    /**
+     * Генерация краткого резюме (summary) для поста с помощью LLM
+     */
+    public function generate_post_summary($post_id) {
+        $post = get_post($post_id);
+        if (!$post) return '';
+
+        // Берем заголовок и первые 2000 символов контента для контекста
+        $context = $post->post_title . "\n\n" . wp_trim_words($post->post_content, 400);
+        
+        $model_manager = new RDS_AIE_Model_Manager($this->db);
+        // Используем модель по умолчанию или ту, что настроена для RAG
+        $settings = get_option('rds_aie_rag_settings', []);
+        $model_id = $settings['embedding_model_id'] ?? 0;
+        
+        // Если для эмбеддинга выбрана специальная модель, попробуем взять текстовую по умолчанию для саммаризации
+        $model = $model_manager->get_default_model(); 
+        if (!$model) return '';
+
+        $url = trailingslashit($model->base_url) . 'chat/completions';
+        $body = [
+            'model' => $model->model_name,
+            'messages' => [
+                ['role' => 'system', 'content' => 'Summarize the following text in 2-3 sentences. Focus on the main topic and key facts. IMPORTANT: You MUST write the summary in the SAME LANGUAGE as the source text.'],
+                ['role' => 'user', 'content' => $context]
+            ],
+            'temperature' => 0.3
+        ];
+
+        $args = [
+            'timeout' => 30,
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . $model->api_key
+            ],
+            'body' => wp_json_encode($body)
+        ];
+
+        $response = wp_remote_post($url, $args);
+        if (is_wp_error($response)) return '';
+        
+        $data = json_decode(wp_remote_retrieve_body($response), true);
+        return $data['choices'][0]['message']['content'] ?? '';
+    }
+
+    /**
+     * Индексация поста: генерация саммари и сохранение эмбединга
+     */
+    public function index_post($post_id) {
+        $post = get_post($post_id);
+        if (!$post) return false;
+
+        $settings = get_option('rds_aie_rag_settings', []);
+        $model_id = $settings['embedding_model_id'] ?? 0;
+        if (empty($model_id)) throw new Exception(__('No embedding model configured.', 'rds-ai-engine'));
+
+        $model_manager = new RDS_AIE_Model_Manager($this->db);
+        $model = $model_manager->get($model_id);
+        if (!$model) throw new Exception(__('Embedding model not found.', 'rds-ai-engine'));
+
+        // 1. Генерируем саммари
+        $summary = $this->generate_post_summary($post_id);
+        if (empty($summary)) $summary = $post->post_title; // Fallback если ИИ не ответил
+
+        // 2. Генерируем эмбединг саммари
+        $embedding = $this->generate_embedding($summary, $model_id);
+        if (!$embedding) return false;
+
+        // 3. Сохраняем в нашу новую таблицу
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'rds_aie_embeddings';
+        
+        $wpdb->replace($table_name, [
+            'post_id'    => $post_id,
+            'post_type'  => $post->post_type,
+            'summary'    => $summary,
+            'embedding'  => wp_json_encode($embedding),
+            'model_name' => $model->model_name
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Векторный поиск по постам
+     */
+    public function vector_search_posts($query, $post_type = '', $limit = 5, $threshold = 0.4) {
+        $settings = get_option('rds_aie_rag_settings', []);
+        $model_id = $settings['embedding_model_id'] ?? 0;
+        if (empty($model_id)) return [];
+
+        // Генерируем вектор для запроса
+        $query_vector = $this->generate_embedding($query, $model_id);
+        if (!$query_vector) return [];
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'rds_aie_embeddings';
+        
+        // Получаем все эмбединги нужного типа (в будущем можно оптимизировать через SQL-поиск, если БД поддерживает векторы)
+        $where = "model_name = %s";
+        $params = [$wpdb->get_var($wpdb->prepare("SELECT model_name FROM {$wpdb->prefix}rds_aie_models WHERE id = %d", $model_id))];
+        
+        if (!empty($post_type)) {
+            $where .= " AND post_type = %s";
+            $params[] = $post_type;
+        }
+
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT post_id, summary, embedding FROM {$table_name} WHERE {$where}",
+            $params
+        ));
+
+        $scores = [];
+        foreach ($rows as $row) {
+            $vector = json_decode($row->embedding, true);
+            if (is_array($vector) && count($vector) === count($query_vector)) {
+                $similarity = $this->cosine_similarity($query_vector, $vector);
+                if ($similarity >= $threshold) {
+                    $scores[] = [
+                        'post_id' => $row->post_id,
+                        'summary' => $row->summary,
+                        'score'   => $similarity
+                    ];
+                }
+            }
+        }
+
+        // Сортируем по убыванию сходства
+        usort($scores, function($a, $b) {
+            return $b['score'] <=> $a['score'];
+        });
+
+        return array_slice($scores, 0, $limit);
+    }
 }

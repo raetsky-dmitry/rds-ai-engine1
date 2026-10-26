@@ -172,6 +172,22 @@ class RDS_AIE_DB
 			PRIMARY KEY (id),
 			KEY document_id (document_id)
 		) $charset_collate;";
+
+        // Таблица векторных индексов для постов (LTM)
+        $sql_embeddings = "CREATE TABLE IF NOT EXISTS {$table_prefix}embeddings (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            post_id BIGINT(20) UNSIGNED NOT NULL,
+            post_type VARCHAR(20) NOT NULL,
+            summary TEXT NOT NULL COMMENT 'Short summary for embedding',
+            embedding LONGTEXT NOT NULL COMMENT 'JSON array of floats',
+            model_name VARCHAR(50) NOT NULL COMMENT 'Embedding model used',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY unique_post_embedding (post_id, model_name),
+            KEY post_type (post_type)
+        ) $charset_collate;";
+
 	 
 		require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
 
@@ -186,6 +202,7 @@ class RDS_AIE_DB
 			$wpdb->prefix . 'rds_aie_skills'        => $sql_skills,
 			$wpdb->prefix . 'rds_aie_agent_skills'  => $sql_agent_skills,
 			$wpdb->prefix . 'rds_aie_knowledge_base'  => $sql_knowledge,
+            $wpdb->prefix . 'rds_aie_embeddings'     => $sql_embeddings, 
 		];
 
 		$created = [];
@@ -256,7 +273,8 @@ class RDS_AIE_DB
 			'agent_tools',
 			'skills',
 			'agent_skills',
-			'knowledge_base'
+			'knowledge_base',
+			'rds_aie_embeddings'
 		];
 
 		foreach ($tables as $table) {
